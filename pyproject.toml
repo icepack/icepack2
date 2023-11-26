@@ -1,0 +1,11 @@
+[project]
+name = "icepack2"
+version = "0.0.1"
+authors = [
+    { name="Daniel Shapero", email="shapero@uw.edu" },
+]
+description = "Ice flow modeling with the finite element method"
+requires-python = ">=3.8"
+
+[project.urls]
+"Homepage" = "https://github.com/icepack/icepack2"
