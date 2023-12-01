@@ -5,7 +5,12 @@ from firedrake import Constant, inner, tr, sym, grad, dx, ds
 import icepack
 
 
-__all__ = ["viscous_power", "friction_power", "boundary", "constraint"]
+__all__ = [
+    "viscous_power",
+    "friction_power",
+    "calving_terminus",
+    "momentum_balance",
+]
 
 
 # Physical constants
@@ -21,11 +26,8 @@ def viscous_power(**kwargs):
     u, M, h = map(kwargs.get, field_names)
 
     # Get the parameters for the constitutive relation
-    parameter_names = (
-        "viscous_yield_strain", "viscous_yield_stress", "flow_law_exponent"
-    )
-    ε, τ, n = map(kwargs.get, parameter_names)
-    A = ε / τ**n
+    parameter_names = ("flow_law_coefficient", "flow_law_exponent")
+    A, n = map(kwargs.get, parameter_names)
 
     mesh = u.ufl_domain()
     d = mesh.geometric_dimension()
@@ -35,7 +37,7 @@ def viscous_power(**kwargs):
     return 2 * h * A / (n + 1) * M_n * dx
 
 
-def boundary(**kwargs):
+def calving_terminus(**kwargs):
     r"""Return the power dissipation from the terminus boundary condition"""
     # Get all the dynamical fields and boundary conditions
     u, h, s = map(kwargs.get, ("velocity", "thickness", "surface"))
@@ -57,17 +59,14 @@ def boundary(**kwargs):
 def friction_power(**kwargs):
     r"""Return the frictional power dissipation"""
     τ = kwargs["basal_stress"]
-    parameter_names = (
-        "friction_yield_speed", "friction_yield_stress", "sliding_law_exponent"
-    )
-    u_c, τ_c, m = map(kwargs.get, parameter_names)
-    K = u_c / τ_c ** m
+    parameter_names = ("sliding_coefficient", "sliding_exponent")
+    K, m = map(kwargs.get, parameter_names)
     τ_2 = inner(τ, τ)
     τ_m = τ_2 if float(m) == 1 else τ_2 ** ((m + 1) / 2)
     return K / (m + 1) * τ_m * dx
 
 
-def constraint(**kwargs):
+def momentum_balance(**kwargs):
     r"""Return the momentum balance constraint"""
     field_names = (
         "velocity", "membrane_stress", "basal_stress", "thickness", "surface"

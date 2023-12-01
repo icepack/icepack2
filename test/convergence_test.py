@@ -82,10 +82,6 @@ for degree in [1, 2]:
             "basal_stress": τ,
             "thickness": h,
             "surface": s,
-            "viscous_yield_strain": ε_c,
-            "viscous_yield_stress": τ_c,
-            "friction_yield_speed": u_c,
-            "friction_yield_stress": τ_c,
             "outflow_ids": outflow_ids,
         }
 
@@ -96,30 +92,38 @@ for degree in [1, 2]:
         fns = [
             model.viscous_power,
             model.friction_power,
-            model.boundary,
-            model.constraint,
+            model.calving_terminus,
+            model.momentum_balance,
         ]
 
-        J_l = sum(
-            fn(**kwargs, flow_law_exponent=1, sliding_law_exponent=1) for fn in fns
-        )
+        lkwargs = {
+            "flow_law_exponent": 1,
+            "flow_law_coefficient": ε_c / τ_c,
+            "sliding_exponent": 1,
+            "sliding_coefficient": u_c / τ_c,
+        }
+        J_l = sum(fn(**kwargs, **lkwargs) for fn in fns)
         F_l = firedrake.derivative(J_l, z)
         firedrake.solve(F_l == 0, z, bcs=bcs)
 
         qdegree = max(8, degree ** n)
-        params = {
+        fcparams = {
             "form_compiler_parameters": {"quadrature_degree": qdegree}
         }
 
         num_continuation_steps = 4
         for t in np.linspace(0.0, 1.0, num_continuation_steps):
-            exponents = {
-                "flow_law_exponent": Constant((1 - t) + t * n),
-                "sliding_law_exponent": Constant((1 - t) + t * m),
+            n_t = Constant((1 - t) + t * n)
+            m_t = Constant((1 - t) + t * m)
+            params = {
+                "flow_law_exponent": n_t,
+                "flow_law_coefficient": ε_c / τ_c ** n_t,
+                "sliding_exponent": m_t,
+                "sliding_coefficient": u_c / τ_c ** m_t,
             }
-            J = sum(fn(**kwargs, **exponents) for fn in fns)
+            J = sum(fn(**kwargs, **params) for fn in fns)
             F = firedrake.derivative(J, z)
-            firedrake.solve(F == 0, z, bcs=bcs, **params)
+            firedrake.solve(F == 0, z, bcs=bcs, **fcparams)
 
         u, M, τ = z.subfunctions
         error = firedrake.norm(u - u_exact) / firedrake.norm(u_exact)
