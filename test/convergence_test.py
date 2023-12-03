@@ -1,6 +1,6 @@
 import numpy as np
 import firedrake
-from firedrake import interpolate, as_vector, max_value, Constant
+from firedrake import interpolate, as_vector, max_value, Constant, derivative
 from icepack.constants import (
     ice_density as ρ_I,
     water_density as ρ_W,
@@ -55,7 +55,6 @@ for degree in [1, 2]:
         Q = firedrake.FunctionSpace(mesh, cg)
         V = firedrake.VectorFunctionSpace(mesh, cg)
         Σ = firedrake.TensorFunctionSpace(mesh, dg, symmetry=True)
-        # TODO: investigate using DG for this?
         T = firedrake.VectorFunctionSpace(mesh, cg)
         Z = V * Σ * T
         z = firedrake.Function(Z)
@@ -71,24 +70,16 @@ for degree in [1, 2]:
         C = interpolate(friction(x), Q)
         u_c = interpolate((τ_c / C)**m, Q)
 
+        # Create the boundary conditions
         inflow_ids = (1,)
         outflow_ids = (2,)
         side_wall_ids = (3, 4)
-
-        u, M, τ = firedrake.split(z)
-        kwargs = {
-            "velocity": u,
-            "membrane_stress": M,
-            "basal_stress": τ,
-            "thickness": h,
-            "surface": s,
-            "outflow_ids": outflow_ids,
-        }
 
         inflow_bc = firedrake.DirichletBC(Z.sub(0), Constant((u_inflow, 0)), inflow_ids)
         side_wall_bc = firedrake.DirichletBC(Z.sub(0).sub(1), 0, side_wall_ids)
         bcs = [inflow_bc, side_wall_bc]
 
+        # Get the Lagrangian, the material parameters, and the input fields
         fns = [
             model.viscous_power,
             model.friction_power,
@@ -96,34 +87,50 @@ for degree in [1, 2]:
             model.momentum_balance,
         ]
 
-        lkwargs = {
-            "flow_law_exponent": 1,
-            "flow_law_coefficient": ε_c / τ_c,
-            "sliding_exponent": 1,
-            "sliding_coefficient": u_c / τ_c,
+        rheology = {
+            "flow_law_exponent": n,
+            "flow_law_coefficient": ε_c / τ_c ** n,
+            "sliding_exponent": m,
+            "sliding_coefficient": u_c / τ_c ** m,
         }
-        J_l = sum(fn(**kwargs, **lkwargs) for fn in fns)
-        F_l = firedrake.derivative(J_l, z)
-        firedrake.solve(F_l == 0, z, bcs=bcs)
+
+        u, M, τ = firedrake.split(z)
+        fields = {
+            "velocity": u,
+            "membrane_stress": M,
+            "basal_stress": τ,
+            "thickness": h,
+            "surface": s,
+        }
+
+        boundary_ids = {"outflow_ids": outflow_ids}
+
+        L = sum(fn(**fields, **rheology, **boundary_ids) for fn in fns)
+        F = derivative(L, z)
+
+        # Regularize second derivative of the Lagrangian
+        λ = firedrake.Constant(1e-3)
+        regularized_rheology = {
+            "flow_law_exponent": 1,
+            "flow_law_coefficient": λ * ε_c / τ_c,
+            "sliding_exponent": 1,
+            "sliding_coefficient": λ * u_c / τ_c,
+        }
+
+        K = sum(
+            fn(**fields, **regularized_rheology)
+            for fn in [model.viscous_power, model.friction_power]
+        )
+        J = derivative(derivative(L + K, z), z)
 
         qdegree = max(8, degree ** n)
-        fcparams = {
-            "form_compiler_parameters": {"quadrature_degree": qdegree}
-        }
+        pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
+        problem = firedrake.NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
+        solver = firedrake.NonlinearVariationalSolver(problem)
 
-        num_continuation_steps = 4
-        for t in np.linspace(0.0, 1.0, num_continuation_steps):
-            n_t = Constant((1 - t) + t * n)
-            m_t = Constant((1 - t) + t * m)
-            params = {
-                "flow_law_exponent": n_t,
-                "flow_law_coefficient": ε_c / τ_c ** n_t,
-                "sliding_exponent": m_t,
-                "sliding_coefficient": u_c / τ_c ** m_t,
-            }
-            J = sum(fn(**kwargs, **params) for fn in fns)
-            F = firedrake.derivative(J, z)
-            firedrake.solve(F == 0, z, bcs=bcs, **fcparams)
+        solver.solve()
+        λ.assign(0.0)
+        solver.solve()
 
         u, M, τ = z.subfunctions
         error = firedrake.norm(u - u_exact) / firedrake.norm(u_exact)
