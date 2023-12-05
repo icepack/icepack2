@@ -1,8 +1,10 @@
-r"""Functions to calculate the Lagrangian for glacier momentum balance"""
+r"""Functions describing glacier mass and momentum balance"""
 
+import ufl
 import firedrake
-from firedrake import Constant, inner, tr, sym, grad, dx, ds
+from firedrake import Constant, inner, tr, sym, grad, dx, ds, max_value, min_value
 import icepack
+from irksome import Dt
 
 
 __all__ = [
@@ -10,6 +12,7 @@ __all__ = [
     "friction_power",
     "calving_terminus",
     "momentum_balance",
+    "mass_balance",
 ]
 
 
@@ -75,3 +78,20 @@ def momentum_balance(**kwargs):
     f = kwargs.get("floating", Constant(1.0))
     ε = sym(grad(u))
     return (-h * inner(M, ε) + inner(f * τ - ρ_I * g * h * grad(s), u)) * dx
+
+
+def mass_balance(**kwargs):
+    r"""Return the mass balance equation"""
+    field_names = ("thickness", "velocity", "accumulation", "test_function")
+    h, u, a, φ = map(kwargs.get, field_names)
+    h_inflow = kwargs.get("thickness_inflow", Constant(0.0))
+
+    cell_balance = (Dt(h) * φ - inner(h * u, grad(φ)) - a * φ) * dx
+
+    mesh = ufl.domain.extract_unique_domain(h)
+    ν = firedrake.FacetNormal(mesh)
+    outflow = h * max_value(0, inner(u, ν)) * φ * ds
+    inflow = h_inflow * min_value(0, inner(u, ν)) * φ * ds
+    boundary_balance = inflow + outflow
+
+    return cell_balance + boundary_balance
