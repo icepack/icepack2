@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import firedrake
 from firedrake import interpolate, as_vector, max_value, Constant, derivative
@@ -43,7 +44,8 @@ def friction(x):
     return α * (ρ_I * g * (h0 - dh * x / Lx)) * exact_u(x) ** (-1 / m)
 
 
-for degree in [1, 2]:
+@pytest.mark.parametrize("degree", [1, 2])
+def test_convergence_rate(degree):
     errors, mesh_sizes = [], []
     k_min, k_max, num_steps = 5 - degree, 8 - degree, 9
     for nx in np.logspace(k_min, k_max, num_steps, base=2, dtype=int):
