@@ -57,7 +57,7 @@ def test_convergence_rate(degree):
         Q = firedrake.FunctionSpace(mesh, cg)
         V = firedrake.VectorFunctionSpace(mesh, cg)
         Σ = firedrake.TensorFunctionSpace(mesh, dg, symmetry=True)
-        T = firedrake.VectorFunctionSpace(mesh, cg)
+        T = firedrake.VectorFunctionSpace(mesh, dg)
         Z = V * Σ * T
         z = firedrake.Function(Z)
         z.sub(0).assign(Constant((u_inflow, 0)))
