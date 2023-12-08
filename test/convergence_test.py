@@ -1,7 +1,7 @@
 import numpy as np
 import firedrake
 from firedrake import interpolate, as_vector, max_value, Constant, derivative
-from icepack.constants import (
+from icepack2.constants import (
     ice_density as ρ_I,
     water_density as ρ_W,
     gravity as g,

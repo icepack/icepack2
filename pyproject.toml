@@ -6,6 +6,9 @@ authors = [
 ]
 description = "Ice flow modeling with the finite element method"
 requires-python = ">=3.8"
+dependencies = [
+    "irksome@git+https://github.com/firedrakeproject/Irksome"
+]
 
 [project.urls]
 "Homepage" = "https://github.com/icepack/icepack2"

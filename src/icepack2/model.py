@@ -3,8 +3,8 @@ r"""Functions describing glacier mass and momentum balance"""
 import ufl
 import firedrake
 from firedrake import Constant, inner, tr, sym, grad, dx, ds, max_value, min_value
-import icepack
 from irksome import Dt
+from .constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
 
 
 __all__ = [
@@ -14,12 +14,6 @@ __all__ = [
     "momentum_balance",
     "mass_balance",
 ]
-
-
-# Physical constants
-ρ_I = Constant(icepack.constants.ice_density)
-ρ_W = Constant(icepack.constants.water_density)
-g = Constant(icepack.constants.gravity)
 
 
 def viscous_power(**kwargs):
