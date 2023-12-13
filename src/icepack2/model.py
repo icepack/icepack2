@@ -2,7 +2,9 @@ r"""Functions describing glacier mass and momentum balance"""
 
 import ufl
 import firedrake
-from firedrake import Constant, inner, tr, sym, grad, dx, ds, max_value, min_value
+from firedrake import (
+    Constant, inner, tr, sym, grad, dx, ds, dS, avg, jump, max_value, min_value
+)
 from irksome import Dt
 from .constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
 
@@ -71,7 +73,13 @@ def momentum_balance(**kwargs):
     u, M, τ, h, s = map(kwargs.get, field_names)
     f = kwargs.get("floating", Constant(1.0))
     ε = sym(grad(u))
-    return (-h * inner(M, ε) + inner(f * τ - ρ_I * g * h * grad(s), u)) * dx
+    cell_balance = (-h * inner(M, ε) + inner(f * τ - ρ_I * g * h * grad(s), u)) * dx
+
+    mesh = ufl.domain.extract_unique_domain(u)
+    ν = firedrake.FacetNormal(mesh)
+    facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν), avg(u)) * dS
+
+    return cell_balance + facet_balance
 
 
 def mass_balance(**kwargs):
@@ -84,8 +92,12 @@ def mass_balance(**kwargs):
 
     mesh = ufl.domain.extract_unique_domain(h)
     ν = firedrake.FacetNormal(mesh)
-    outflow = h * max_value(0, inner(u, ν)) * φ * ds
+    f = h * max_value(0, inner(u, ν))
+
+    outflow = f * φ * ds
     inflow = h_inflow * min_value(0, inner(u, ν)) * φ * ds
     boundary_balance = inflow + outflow
 
-    return cell_balance + boundary_balance
+    facet_balance = jump(f) * jump(φ) * dS
+
+    return cell_balance + facet_balance + boundary_balance
