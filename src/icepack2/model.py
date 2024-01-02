@@ -3,7 +3,7 @@ r"""Functions describing glacier mass and momentum balance"""
 import ufl
 import firedrake
 from firedrake import (
-    Constant, inner, tr, sym, grad, dx, ds, dS, avg, jump, max_value, min_value
+    Constant, inner, tr, sym, grad, div, dx, ds, dS, avg, jump, max_value, min_value
 )
 from irksome import Dt
 from .constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
@@ -14,6 +14,7 @@ __all__ = [
     "friction_power",
     "calving_terminus",
     "momentum_balance",
+    "ice_shelf_momentum_balance",
     "mass_balance",
 ]
 
@@ -80,6 +81,21 @@ def momentum_balance(**kwargs):
     facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν), avg(u)) * dS
 
     return cell_balance + facet_balance
+
+
+def ice_shelf_momentum_balance(**kwargs):
+    r"""Return the momentum balance constraint for floating ice shelves
+
+    Floating ice shelves are simpler because there is no basal shear stress and
+    we assume the ice is hydrostatic, in which case the surface elevation is
+    proportional to the thickness.
+    """
+    field_names = ("velocity", "membrane_stress", "thickness")
+    u, M, h = map(kwargs.get, field_names)
+    ε = sym(grad(u))
+
+    ρ = ρ_I * (1 - ρ_I / ρ_W)
+    return (-h * inner(M, ε) + 0.5 * ρ * g * h**2 * div(u)) * dx
 
 
 def mass_balance(**kwargs):
