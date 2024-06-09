@@ -1,3 +1,10 @@
+# Checkpoint files
+*.h5
+
+# Input/output files for gmsh
+*.geo
+*.msh
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
