@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import firedrake
-from firedrake import interpolate, as_vector, max_value, Constant, derivative
+from firedrake import as_vector, max_value, Constant, Function, derivative
 from icepack2.constants import (
     ice_density as ρ_I,
     water_density as ρ_W,
@@ -58,18 +58,18 @@ def test_convergence_rate_grounded(degree):
         Σ = firedrake.TensorFunctionSpace(mesh, dg, symmetry=True)
         T = firedrake.VectorFunctionSpace(mesh, dg)
         Z = V * Σ * T
-        z = firedrake.Function(Z)
+        z = Function(Z)
         z.sub(0).assign(Constant((u_inflow, 0)))
 
-        u_exact = interpolate(as_vector((exact_u(x), 0)), V)
+        u_exact = Function(V).interpolate(as_vector((exact_u(x), 0)))
 
-        h = interpolate(h0 - dh * x / Lx, Q)
+        h = Function(Q).interpolate(h0 - dh * x / Lx)
         ds = (1 + β) * ρ / ρ_I * dh
-        s = interpolate(d + h0 - dh + ds * (1 - x / Lx), Q)
+        s = Function(Q).interpolate(d + h0 - dh + ds * (1 - x / Lx))
 
         # TODO: adjust the yield stress so that this has a more sensible value
-        C = interpolate(friction(x), Q)
-        u_c = interpolate((τ_c / C)**m, Q)
+        C = Function(Q).interpolate(friction(x))
+        u_c = Function(Q).interpolate((τ_c / C)**m)
 
         # Create the boundary conditions
         inflow_ids = (1,)
@@ -186,12 +186,12 @@ def test_convergence_rate_floating(degree):
         V = firedrake.VectorFunctionSpace(mesh, cg)
         Σ = firedrake.TensorFunctionSpace(mesh, dg, symmetry=True)
         Z = V * Σ
-        z = firedrake.Function(Z)
+        z = Function(Z)
         z.sub(0).assign(Constant(u_inflow, 0))
 
-        u_exact = interpolate(as_vector((exact_u(x), 0)), V)
+        u_exact = Function(V).interpolate(as_vector((exact_u(x), 0)))
 
-        h = interpolate(h0 - dh * x / Lx, Q)
+        h = Function(Q).interpolate(h0 - dh * x / Lx)
         inflow_ids = (1,)
         outflow_ids = (2,)
         side_wall_ids = (3, 4)
