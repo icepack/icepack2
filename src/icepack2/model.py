@@ -29,7 +29,7 @@ def viscous_power(**kwargs):
     parameter_names = ("flow_law_coefficient", "flow_law_exponent")
     A, n = map(kwargs.get, parameter_names)
 
-    mesh = u.ufl_domain()
+    mesh = ufl.domain.extract_unique_domain(u)
     d = mesh.geometric_dimension()
 
     M_2 = (inner(M, M) - tr(M) ** 2 / (d + 1)) / 2
@@ -44,7 +44,7 @@ def calving_terminus(**kwargs):
     outflow_ids = kwargs["outflow_ids"]
 
     # Get the unit outward normal vector to the terminus
-    mesh = u.ufl_domain()
+    mesh = ufl.domain.extract_unique_domain(u)
     ν = firedrake.FacetNormal(mesh)
 
     # Compute the forces per unit length at the terminus from the glacier
