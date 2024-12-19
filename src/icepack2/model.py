@@ -22,14 +22,14 @@ __all__ = [
 def viscous_power(**kwargs):
     r"""Return the viscous power dissipation"""
     # Get all the dynamical fields
-    field_names = ("velocity", "membrane_stress", "thickness")
-    u, M, h = map(kwargs.get, field_names)
+    field_names = ("membrane_stress", "thickness")
+    M, h = map(kwargs.get, field_names)
 
     # Get the parameters for the constitutive relation
     parameter_names = ("flow_law_coefficient", "flow_law_exponent")
     A, n = map(kwargs.get, parameter_names)
 
-    mesh = ufl.domain.extract_unique_domain(u)
+    mesh = ufl.domain.extract_unique_domain(M)
     d = mesh.geometric_dimension()
 
     M_2 = (inner(M, M) - tr(M) ** 2 / (d + 1)) / 2
