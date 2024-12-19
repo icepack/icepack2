@@ -19,6 +19,48 @@ __all__ = [
 ]
 
 
+def flow_law(**kwargs):
+    M, u, N = map(kwargs.get, ("membrane_stress", "velocity", "test_function"))
+    A, n = map(kwargs.get, ("flow_law_coefficient", "flow_law_exponent"))
+
+    mesh = ufl.domain.extract_unique_domain(u)
+    d = mesh.geometric_dimension()
+
+    ε = sym(grad(u))
+    M_2 = (inner(M, M) - tr(M) ** 2 / (d + 1)) / 2
+    M_n = Constant(1.0) if float(n) == 1 else M_2 ** ((n - 1) / 2)
+    return (A * M_n * (inner(M, N) - tr(M) * tr(N) / (d + 1)) - inner(ε, N)) * dx
+
+
+def friction_law(**kwargs):
+    τ, u, σ = map(kwargs.get, ("basal_stress", "velocity", "test_function"))
+    K, m = map(kwargs.get, ("sliding_coefficient", "sliding_exponent"))
+    τ_2 = inner(τ, τ)
+    τ_m = Constant(1.0) if float(n) == 1 else τ_2 ** ((m - 1) / 2)
+    return inner(K * τ_m * τ + u, σ) * dx
+
+
+def membrane_stress_balance(**kwargs):
+    field_names = (
+        "velocity",
+        "membrane_stress",
+        "basal_stress",
+        "thickness",
+        "surface",
+        "test_function",
+    )
+    u, M, τ, h, s, v = map(kwargs.get, field_names)
+
+    ε = sym(grad(v))
+    cell_balance = (-h * inner(M, ε) + inner(τ - ρ_I * g * h * grad(s), v)) * dx
+
+    mesh = ufl.domain.extract_unique_domain(u)
+    ν = firedrake.FacetNormal(mesh)
+    facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν), avg(v)) * dS
+
+    return cell_balance + facet_balance
+
+
 def viscous_power(**kwargs):
     r"""Return the viscous power dissipation"""
     # Get all the dynamical fields
