@@ -4,7 +4,7 @@ import pytest
 import firedrake
 from firedrake import dx, inner, max_value, Constant
 import irksome
-from icepack2 import model
+from icepack2.model import VariationalForm
 
 @pytest.mark.parametrize("degree", [0, 1, 2])
 def test_convergence_rate(degree):
@@ -30,7 +30,7 @@ def test_convergence_rate(degree):
         w = x - c
         u = firedrake.as_vector((-w[1], w[0]))
 
-        problem = model.mass_balance(
+        problem = VariationalForm.mass_balance(
             thickness=h,
             velocity=u,
             accumulation=Constant(0.0),

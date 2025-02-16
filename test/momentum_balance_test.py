@@ -9,11 +9,12 @@ from icepack2.constants import (
     glen_flow_law as n,
     weertman_sliding_law as m,
 )
-from icepack2 import model
+from icepack2.model import VariationalForm, MinimizationForm
 
 
-@pytest.mark.parametrize("degree", [1, 2])
-def test_convergence_rate_grounded(degree):
+@pytest.mark.parametrize("degree", (1, 2))
+@pytest.mark.parametrize("form", ("minimization", "variational"))
+def test_convergence_rate_grounded(degree, form):
     Lx, Ly = Constant(20e3), Constant(20e3)
     h0, dh = Constant(500.0), Constant(100.0)
     u_inflow = Constant(100.0)
@@ -80,19 +81,20 @@ def test_convergence_rate_grounded(degree):
         side_wall_bc = firedrake.DirichletBC(Z.sub(0).sub(1), 0, side_wall_ids)
         bcs = [inflow_bc, side_wall_bc]
 
-        # Get the Lagrangian, the material parameters, and the input fields
-        fns = [
-            model.viscous_power,
-            model.friction_power,
-            model.calving_terminus,
-            model.momentum_balance,
-        ]
-
+        # Make the material parameters and input fields
         rheology = {
             "flow_law_exponent": n,
             "flow_law_coefficient": ε_c / τ_c ** n,
             "sliding_exponent": m,
             "sliding_coefficient": u_c / τ_c ** m,
+        }
+
+        λ = firedrake.Constant(1e-3)
+        regularized_rheology = {
+            "flow_law_exponent": 1,
+            "flow_law_coefficient": λ * ε_c / τ_c,
+            "sliding_exponent": 1,
+            "sliding_coefficient": λ * u_c / τ_c,
         }
 
         u, M, τ = firedrake.split(z)
@@ -106,28 +108,53 @@ def test_convergence_rate_grounded(degree):
 
         boundary_ids = {"outflow_ids": outflow_ids}
 
-        L = sum(fn(**fields, **rheology, **boundary_ids) for fn in fns)
-        F = derivative(L, z)
+        if form == "minimization":
+            fns = [
+                MinimizationForm.viscous_power,
+                MinimizationForm.friction_power,
+                MinimizationForm.calving_terminus,
+                MinimizationForm.momentum_balance,
+            ]
 
-        # Regularize second derivative of the Lagrangian
-        λ = firedrake.Constant(1e-3)
-        regularized_rheology = {
-            "flow_law_exponent": 1,
-            "flow_law_coefficient": λ * ε_c / τ_c,
-            "sliding_exponent": 1,
-            "sliding_coefficient": λ * u_c / τ_c,
-        }
+            L = sum(fn(**fields, **rheology, **boundary_ids) for fn in fns)
+            F = derivative(L, z)
 
-        K = sum(
-            fn(**fields, **regularized_rheology)
-            for fn in [model.viscous_power, model.friction_power]
-        )
-        J = derivative(derivative(L + K, z), z)
+            K = sum(
+                fn(**fields, **regularized_rheology)
+                for fn in [
+                    MinimizationForm.viscous_power, MinimizationForm.friction_power
+                ]
+            )
+            J = derivative(derivative(L + K, z), z)
+        elif form == "variational":
+            v, N, σ = firedrake.TestFunctions(Z)
+            kfns = [
+                (VariationalForm.flow_law, N),
+                (VariationalForm.friction_law, σ),
+            ]
+            fns = kfns + [
+                (VariationalForm.calving_terminus, v),
+                (VariationalForm.momentum_balance, v),
+            ]
+
+            F = sum(fn(**fields, **rheology, **boundary_ids, test_function=φ) for fn, φ in fns)
+            G = sum(fn(**fields, **regularized_rheology, test_function=φ) for fn, φ in kfns)
+            J = derivative(F + G, z)
 
         qdegree = max(8, degree ** n)
         pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
         problem = firedrake.NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
-        solver = firedrake.NonlinearVariationalSolver(problem)
+        sparams = {
+            "solver_parameters": {
+                "snes_type": "newtonls",
+                "snes_max_it": 200,
+                "snes_linesearch_type": "nleqerr",
+                "ksp_type": "gmres",
+                "pc_type": "lu",
+                "pc_factor_mat_solver_type": "umfpack",
+            }
+        }
+        solver = firedrake.NonlinearVariationalSolver(problem, **sparams)
 
         solver.solve()
         λ.assign(0.0)
@@ -201,9 +228,9 @@ def test_convergence_rate_floating(degree):
         bcs = [inflow_bc, side_wall_bc]
 
         fns = [
-            model.viscous_power,
-            #model.calving_terminus,
-            model.ice_shelf_momentum_balance,
+            MinimizationForm.viscous_power,
+            #MinimizationForm.calving_terminus,
+            MinimizationForm.ice_shelf_momentum_balance,
         ]
 
         rheology = {
@@ -225,7 +252,7 @@ def test_convergence_rate_floating(degree):
             "flow_law_coefficient": λ * ε_c / τ_c,
         }
 
-        K = model.viscous_power(**fields, **regularized_rheology)
+        K = MinimizationForm.viscous_power(**fields, **regularized_rheology)
         J = derivative(derivative(L + K, z), z)
 
         qdegree = max(8, degree ** n)
