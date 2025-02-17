@@ -1,13 +1,21 @@
 import pytest
 import numpy as np
 import firedrake
-from firedrake import as_vector, max_value, Constant, Function, derivative
+from firedrake import (
+    as_vector,
+    max_value,
+    Constant,
+    Function,
+    derivative,
+    NonlinearVariationalProblem,
+    NonlinearVariationalSolver,
+)
 from icepack2.constants import (
     ice_density as ρ_I,
     water_density as ρ_W,
     gravity as g,
-    glen_flow_law as n,
-    weertman_sliding_law as m,
+    glen_flow_law,
+    weertman_sliding_law,
 )
 from icepack2.model import VariationalForm, MinimizationForm
 
@@ -18,6 +26,9 @@ def test_convergence_rate_grounded(degree, form):
     Lx, Ly = Constant(20e3), Constant(20e3)
     h0, dh = Constant(500.0), Constant(100.0)
     u_inflow = Constant(100.0)
+
+    n = firedrake.Constant(glen_flow_law)
+    m = firedrake.Constant(glen_flow_law)
 
     τ_c = Constant(0.1)
     ε_c = Constant(0.01)
@@ -81,20 +92,15 @@ def test_convergence_rate_grounded(degree, form):
         side_wall_bc = firedrake.DirichletBC(Z.sub(0).sub(1), 0, side_wall_ids)
         bcs = [inflow_bc, side_wall_bc]
 
+        n = firedrake.Constant(1.0)
+        m = firedrake.Constant(1.0)
+
         # Make the material parameters and input fields
         rheology = {
             "flow_law_exponent": n,
             "flow_law_coefficient": ε_c / τ_c ** n,
             "sliding_exponent": m,
             "sliding_coefficient": u_c / τ_c ** m,
-        }
-
-        λ = firedrake.Constant(1e-3)
-        regularized_rheology = {
-            "flow_law_exponent": 1,
-            "flow_law_coefficient": λ * ε_c / τ_c,
-            "sliding_exponent": 1,
-            "sliding_coefficient": λ * u_c / τ_c,
         }
 
         u, M, τ = firedrake.split(z)
@@ -108,6 +114,8 @@ def test_convergence_rate_grounded(degree, form):
 
         boundary_ids = {"outflow_ids": outflow_ids}
 
+        qdegree = max(8, degree ** glen_flow_law)
+        pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
         if form == "minimization":
             fns = [
                 MinimizationForm.viscous_power,
@@ -116,34 +124,30 @@ def test_convergence_rate_grounded(degree, form):
                 MinimizationForm.momentum_balance,
             ]
 
-            L = sum(fn(**fields, **rheology, **boundary_ids) for fn in fns)
-            F = derivative(L, z)
-
-            K = sum(
-                fn(**fields, **regularized_rheology)
-                for fn in [
-                    MinimizationForm.viscous_power, MinimizationForm.friction_power
-                ]
-            )
-            J = derivative(derivative(L + K, z), z)
+            def form_problem(rheology):
+                L = sum(fn(**fields, **rheology, **boundary_ids) for fn in fns)
+                F = derivative(L, z)
+                J = derivative(F, z)
+                problem = NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
+                return problem
         elif form == "variational":
             v, N, σ = firedrake.TestFunctions(Z)
-            kfns = [
+            fns = [
                 (VariationalForm.flow_law, N),
                 (VariationalForm.friction_law, σ),
-            ]
-            fns = kfns + [
                 (VariationalForm.calving_terminus, v),
                 (VariationalForm.momentum_balance, v),
             ]
 
-            F = sum(fn(**fields, **rheology, **boundary_ids, test_function=φ) for fn, φ in fns)
-            G = sum(fn(**fields, **regularized_rheology, test_function=φ) for fn, φ in kfns)
-            J = derivative(F + G, z)
+            def form_problem(rheology):
+                F = sum(
+                    fn(**fields, **rheology, **boundary_ids, test_function=φ)
+                    for fn, φ in fns
+                )
+                J = derivative(F, z)
+                problem = NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
+                return problem
 
-        qdegree = max(8, degree ** n)
-        pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
-        problem = firedrake.NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
         sparams = {
             "solver_parameters": {
                 "snes_type": "newtonls",
@@ -151,14 +155,18 @@ def test_convergence_rate_grounded(degree, form):
                 "snes_linesearch_type": "nleqerr",
                 "ksp_type": "gmres",
                 "pc_type": "lu",
-                "pc_factor_mat_solver_type": "umfpack",
+                "pc_factor_mat_solver_type": "mumps",
             }
         }
-        solver = firedrake.NonlinearVariationalSolver(problem, **sparams)
 
-        solver.solve()
-        λ.assign(0.0)
-        solver.solve()
+        num_continuation_steps = 5
+        λs = np.linspace(0.0, 1.0, num_continuation_steps)
+        for λ in λs:
+            n.assign((1 - λ) + λ * glen_flow_law)
+            m.assign((1 - λ) + λ * weertman_sliding_law)
+            problem = form_problem(rheology)
+            solver = NonlinearVariationalSolver(problem, **sparams)
+            solver.solve()
 
         u, M, τ = z.subfunctions
         error = firedrake.norm(u - u_exact) / firedrake.norm(u_exact)
@@ -179,6 +187,8 @@ def test_convergence_rate_floating(degree):
     Lx, Ly = Constant(20e3), Constant(20e3)
     h0, dh = Constant(500.0), Constant(100.0)
     u_inflow = Constant(100.0)
+
+    n = firedrake.Constant(glen_flow_law)
 
     τ_c = Constant(0.1)
     ε_c = Constant(0.01)
@@ -255,10 +265,10 @@ def test_convergence_rate_floating(degree):
         K = MinimizationForm.viscous_power(**fields, **regularized_rheology)
         J = derivative(derivative(L + K, z), z)
 
-        qdegree = max(8, degree ** n)
+        qdegree = max(8, degree ** glen_flow_law)
         pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
-        problem = firedrake.NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
-        solver = firedrake.NonlinearVariationalSolver(problem)
+        problem = NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
+        solver = NonlinearVariationalSolver(problem)
 
         solver.solve()
         λ.assign(0.0)
