@@ -1,6 +1,20 @@
 import ufl
 from firedrake import (
-    Constant, inner, tr, sym, grad, div, dx, ds, dS, avg, jump, FacetNormal, min_value
+    eq,
+    conditional,
+    Constant,
+    inner,
+    tr,
+    sym,
+    grad,
+    div,
+    dx,
+    ds,
+    dS,
+    avg,
+    jump,
+    FacetNormal,
+    min_value,
 )
 from ..constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
 
@@ -19,7 +33,7 @@ def viscous_power(**kwargs):
     d = mesh.geometric_dimension()
 
     M_2 = (inner(M, M) - tr(M) ** 2 / (d + 1)) / 2
-    M_n = M_2 if float(n) == 1 else M_2 ** ((n + 1) / 2)
+    M_n = conditional(eq(n, 1), M_2, M_2 ** ((n + 1) / 2))
     return 2 * h * A / (n + 1) * M_n * dx
 
 
@@ -29,7 +43,7 @@ def friction_power(**kwargs):
     parameter_names = ("sliding_coefficient", "sliding_exponent")
     K, m = map(kwargs.get, parameter_names)
     τ_2 = inner(τ, τ)
-    τ_m = τ_2 if float(m) == 1 else τ_2 ** ((m + 1) / 2)
+    τ_m = conditional(eq(m, 1), τ_2, τ_2 ** ((m + 1) / 2))
     return K / (m + 1) * τ_m * dx
 
 

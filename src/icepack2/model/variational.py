@@ -1,6 +1,20 @@
 import ufl
 from firedrake import (
-    Constant, inner, tr, sym, grad, div, dx, ds, dS, avg, jump, FacetNormal, min_value
+    eq,
+    conditional,
+    Constant,
+    inner,
+    tr,
+    sym,
+    grad,
+    div,
+    dx,
+    ds,
+    dS,
+    avg,
+    jump,
+    FacetNormal,
+    min_value,
 )
 from ..constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
 
@@ -15,7 +29,7 @@ def flow_law(**kwargs):
 
     ε = sym(grad(u))
     M_2 = (inner(M, M) - tr(M) ** 2 / (d + 1)) / 2
-    M_n = Constant(1.0) if float(n) == 1 else M_2 ** ((n - 1) / 2)
+    M_n = conditional(eq(n, 1), Constant(1.0), M_2 ** ((n - 1) / 2))
     return h * (A * M_n * (inner(M, N) - tr(M) * tr(N) / (d + 1)) - inner(ε, N)) * dx
 
 
@@ -23,7 +37,7 @@ def friction_law(**kwargs):
     τ, u, σ = map(kwargs.get, ("basal_stress", "velocity", "test_function"))
     K, m = map(kwargs.get, ("sliding_coefficient", "sliding_exponent"))
     τ_2 = inner(τ, τ)
-    τ_m = Constant(1.0) if float(m) == 1 else τ_2 ** ((m - 1) / 2)
+    τ_m = conditional(eq(m, 1), Constant(1.0), τ_2 ** ((m - 1) / 2))
     return inner(K * τ_m * τ + u, σ) * dx
 
 
