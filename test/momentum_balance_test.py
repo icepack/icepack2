@@ -199,11 +199,11 @@ def test_convergence_rate_floating(degree):
     # Blatter for the derivation.
     def exact_u(x):
         ρ = ρ_I * (1 - ρ_I / ρ_W)
-        Z = A * (ρ * g * h0 / 4) ** n
-        q = 1 - (1 - (dh / h0) * (x / Lx)) ** (n + 1)
-        du = Z * q * Lx * (h0 / dh) / (n + 1)
-        return u_inflow + du
-
+        h = h0 - dh * x / Lx
+        P = ρ * g * h / 4
+        P_0 = ρ * g * h0 / 4
+        δP = ρ * g * dh / 4
+        return u_inflow + Lx * A * (P_0 ** (n + 1) - P ** (n + 1)) / ((n + 1) * δP)
 
     # We'll use the same perturbation to `u` throughout these tests.
     def perturb_u(x, y):
