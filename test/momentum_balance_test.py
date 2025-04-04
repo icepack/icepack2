@@ -20,11 +20,24 @@ from icepack2.constants import (
 from icepack2 import model
 
 
+sparams = {
+    "solver_parameters": {
+        "snes_type": "newtonls",
+        "snes_max_it": 200,
+        "snes_linesearch_type": "nleqerr",
+        "ksp_type": "gmres",
+        "pc_type": "lu",
+        "pc_factor_mat_solver_type": "mumps",
+    },
+}
+
+
 @pytest.mark.parametrize("degree", (1, 2))
 @pytest.mark.parametrize("form", ("minimization", "variational"))
 def test_convergence_rate_grounded(degree, form):
     Lx, Ly = Constant(20e3), Constant(20e3)
     h0, dh = Constant(500.0), Constant(100.0)
+    s0, ds = Constant(150.0), Constant(90.0)
     u_inflow = Constant(100.0)
 
     n = firedrake.Constant(glen_flow_law)
@@ -34,28 +47,27 @@ def test_convergence_rate_grounded(degree, form):
     ε_c = Constant(0.01)
     A = ε_c / τ_c**n
 
-    height_above_flotation = Constant(10.0)
-    d = Constant(-ρ_I / ρ_W * (h0 - dh) + height_above_flotation)
-    ρ = Constant(ρ_I - ρ_W * d**2 / (h0 - dh) ** 2)
+    h_L = h0 - dh
+    s_L = s0 - ds
+    β = dh / ds * (ρ_I * h_L**2 - ρ_W * (s_L - h_L)**2) / (ρ_I * h_L**2)
 
     # We'll arbitrarily pick this to be the velocity, then we'll find a
     # friction coefficient and surface elevation that makes this velocity
     # an exact solution of the shelfy stream equations.
     def exact_u(x):
-        Z = A * (ρ * g * h0 / 4) ** n
-        q = 1 - (1 - (dh / h0) * (x / Lx)) ** (n + 1)
-        du = Z * q * Lx * (h0 / dh) / (n + 1)
+        ρ = β * ρ_I * ds / dh
+        h = h0 - dh * x / Lx
+        P = ρ * g * h / 4
+        dP = ρ * g * dh / 4
+        P0 = ρ * g * h0 / 4
+        du = Lx * A * (P0 ** (n + 1) - P ** (n + 1)) / ((n + 1) * dP)
         return u_inflow + du
 
 
-    # With this choice of friction coefficient, we can take the surface
-    # elevation to be a linear function of the horizontal coordinate and the
-    # velocity will be an exact solution of the shelfy stream equations.
-    β = Constant(0.5)
-    α = Constant(β * ρ / ρ_I * dh / Lx)
-
     def friction(x):
-        return α * (ρ_I * g * (h0 - dh * x / Lx)) * exact_u(x) ** (-1 / m)
+        h = h0 - dh * x / Lx
+        return (1 - β) * (ρ_I * g * h) * ds / Lx * exact_u(x) ** (-1 / m)
+
 
     errors, mesh_sizes = [], []
     k_min, k_max, num_steps = 5 - degree, 8 - degree, 9
@@ -76,8 +88,7 @@ def test_convergence_rate_grounded(degree, form):
         u_exact = Function(V).interpolate(as_vector((exact_u(x), 0)))
 
         h = Function(Q).interpolate(h0 - dh * x / Lx)
-        ds = (1 + β) * ρ / ρ_I * dh
-        s = Function(Q).interpolate(d + h0 - dh + ds * (1 - x / Lx))
+        s = Function(Q).interpolate(s0 - ds * x / Lx)
 
         # TODO: adjust the yield stress so that this has a more sensible value
         C = Function(Q).interpolate(friction(x))
@@ -148,17 +159,6 @@ def test_convergence_rate_grounded(degree, form):
                 problem = NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
                 return problem
 
-        sparams = {
-            "solver_parameters": {
-                "snes_type": "newtonls",
-                "snes_max_it": 200,
-                "snes_linesearch_type": "nleqerr",
-                "ksp_type": "gmres",
-                "pc_type": "lu",
-                "pc_factor_mat_solver_type": "mumps",
-            }
-        }
-
         num_continuation_steps = 5
         λs = np.linspace(0.0, 1.0, num_continuation_steps)
         for λ in λs:
@@ -199,11 +199,11 @@ def test_convergence_rate_floating(degree):
     # Blatter for the derivation.
     def exact_u(x):
         ρ = ρ_I * (1 - ρ_I / ρ_W)
-        Z = A * (ρ * g * h0 / 4) ** n
-        q = 1 - (1 - (dh / h0) * (x / Lx)) ** (n + 1)
-        du = Z * q * Lx * (h0 / dh) / (n + 1)
-        return u_inflow + du
-
+        h = h0 - dh * x / Lx
+        P = ρ * g * h / 4
+        P_0 = ρ * g * h0 / 4
+        δP = ρ * g * dh / 4
+        return u_inflow + Lx * A * (P_0 ** (n + 1) - P ** (n + 1)) / ((n + 1) * δP)
 
     # We'll use the same perturbation to `u` throughout these tests.
     def perturb_u(x, y):
@@ -255,24 +255,15 @@ def test_convergence_rate_floating(degree):
         L = sum(fn(**fields, **rheology, **boundary_ids) for fn in fns)
         F = derivative(L, z)
 
-        # Regularize second derivative of the Lagrangian
-        λ = firedrake.Constant(1e-3)
-        regularized_rheology = {
-            "flow_law_exponent": 1,
-            "flow_law_coefficient": λ * ε_c / τ_c,
-        }
-
-        K = model.minimization.viscous_power(**fields, **regularized_rheology)
-        J = derivative(derivative(L + K, z), z)
-
         qdegree = max(8, degree ** glen_flow_law)
         pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
-        problem = NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
-        solver = NonlinearVariationalSolver(problem)
+        problem = NonlinearVariationalProblem(F, z, bcs, **pparams)
+        solver = NonlinearVariationalSolver(problem, **sparams)
 
-        solver.solve()
-        λ.assign(0.0)
-        solver.solve()
+        num_continuation_steps = 5
+        for exponent in np.linspace(1.0, glen_flow_law, num_continuation_steps):
+            n.assign(exponent)
+            solver.solve()
 
         u, M = z.subfunctions
         error = firedrake.norm(u - u_exact) / firedrake.norm(u_exact)
