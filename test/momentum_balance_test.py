@@ -20,6 +20,18 @@ from icepack2.constants import (
 from icepack2 import model
 
 
+sparams = {
+    "solver_parameters": {
+        "snes_type": "newtonls",
+        "snes_max_it": 200,
+        "snes_linesearch_type": "nleqerr",
+        "ksp_type": "gmres",
+        "pc_type": "lu",
+        "pc_factor_mat_solver_type": "mumps",
+    },
+}
+
+
 @pytest.mark.parametrize("degree", (1, 2))
 @pytest.mark.parametrize("form", ("minimization", "variational"))
 def test_convergence_rate_grounded(degree, form):
@@ -148,17 +160,6 @@ def test_convergence_rate_grounded(degree, form):
                 problem = NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
                 return problem
 
-        sparams = {
-            "solver_parameters": {
-                "snes_type": "newtonls",
-                "snes_max_it": 200,
-                "snes_linesearch_type": "nleqerr",
-                "ksp_type": "gmres",
-                "pc_type": "lu",
-                "pc_factor_mat_solver_type": "mumps",
-            }
-        }
-
         num_continuation_steps = 5
         λs = np.linspace(0.0, 1.0, num_continuation_steps)
         for λ in λs:
@@ -255,24 +256,15 @@ def test_convergence_rate_floating(degree):
         L = sum(fn(**fields, **rheology, **boundary_ids) for fn in fns)
         F = derivative(L, z)
 
-        # Regularize second derivative of the Lagrangian
-        λ = firedrake.Constant(1e-3)
-        regularized_rheology = {
-            "flow_law_exponent": 1,
-            "flow_law_coefficient": λ * ε_c / τ_c,
-        }
-
-        K = model.minimization.viscous_power(**fields, **regularized_rheology)
-        J = derivative(derivative(L + K, z), z)
-
         qdegree = max(8, degree ** glen_flow_law)
         pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
-        problem = NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
-        solver = NonlinearVariationalSolver(problem)
+        problem = NonlinearVariationalProblem(F, z, bcs, **pparams)
+        solver = NonlinearVariationalSolver(problem, **sparams)
 
-        solver.solve()
-        λ.assign(0.0)
-        solver.solve()
+        num_continuation_steps = 5
+        for exponent in np.linspace(1.0, glen_flow_law, num_continuation_steps):
+            n.assign(exponent)
+            solver.solve()
 
         u, M = z.subfunctions
         error = firedrake.norm(u - u_exact) / firedrake.norm(u_exact)
