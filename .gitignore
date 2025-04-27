@@ -1,9 +1,11 @@
 # Checkpoint files
 *.h5
 
-# Input/output files for gmsh
+# Input/output files for mesh generators
 *.geo
 *.msh
+*.mesh
+*.sol
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
