@@ -59,22 +59,28 @@ def calving_terminus(**kwargs):
 
 def momentum_balance(**kwargs):
     field_names = (
-        "velocity",
         "membrane_stress",
         "basal_stress",
         "thickness",
         "surface",
         "test_function",
     )
-    u, M, τ, h, s, v = map(kwargs.get, field_names)
+    M, τ, h, s, v = map(kwargs.get, field_names)
 
     ε = sym(grad(v))
     cell_balance = (-h * inner(M, ε) + inner(τ - ρ_I * g * h * grad(s), v)) * dx
 
-    mesh = ufl.domain.extract_unique_domain(u)
+    mesh = ufl.domain.extract_unique_domain(v)
     ν = FacetNormal(mesh)
     facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν), avg(v)) * dS
 
     return cell_balance + facet_balance
 
 
+def ice_shelf_momentum_balance(**kwargs):
+    field_names = ("membrane_stress", "thickness", "test_function")
+    M, h, v = map(kwargs.get, field_names)
+    ε = sym(grad(v))
+
+    ρ = ρ_I * (1 - ρ_I / ρ_W)
+    return (-h * inner(M, ε) + 0.5 * ρ * g * h**2 * div(v)) * dx

@@ -3,10 +3,10 @@ import numpy as np
 import firedrake
 from firedrake import (
     as_vector,
-    max_value,
     Constant,
     Function,
     derivative,
+    DirichletBC,
     NonlinearVariationalProblem,
     NonlinearVariationalSolver,
 )
@@ -40,8 +40,8 @@ def test_convergence_rate_grounded(degree, form):
     s0, ds = Constant(150.0), Constant(90.0)
     u_inflow = Constant(100.0)
 
-    n = firedrake.Constant(glen_flow_law)
-    m = firedrake.Constant(glen_flow_law)
+    n = Constant(glen_flow_law)
+    m = Constant(glen_flow_law)
 
     τ_c = Constant(0.1)
     ε_c = Constant(0.01)
@@ -99,12 +99,12 @@ def test_convergence_rate_grounded(degree, form):
         outflow_ids = (2,)
         side_wall_ids = (3, 4)
 
-        inflow_bc = firedrake.DirichletBC(Z.sub(0), Constant((u_inflow, 0)), inflow_ids)
-        side_wall_bc = firedrake.DirichletBC(Z.sub(0).sub(1), 0, side_wall_ids)
+        inflow_bc = DirichletBC(Z.sub(0), Constant((u_inflow, 0)), inflow_ids)
+        side_wall_bc = DirichletBC(Z.sub(0).sub(1), 0, side_wall_ids)
         bcs = [inflow_bc, side_wall_bc]
 
-        n = firedrake.Constant(1.0)
-        m = firedrake.Constant(1.0)
+        n = Constant(1.0)
+        m = Constant(1.0)
 
         # Make the material parameters and input fields
         rheology = {
@@ -127,6 +127,7 @@ def test_convergence_rate_grounded(degree, form):
 
         qdegree = max(8, degree ** glen_flow_law)
         pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
+
         if form == "minimization":
             fns = [
                 model.minimization.viscous_power,
@@ -138,9 +139,7 @@ def test_convergence_rate_grounded(degree, form):
             def form_problem(rheology):
                 L = sum(fn(**fields, **rheology, **boundary_ids) for fn in fns)
                 F = derivative(L, z)
-                J = derivative(F, z)
-                problem = NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
-                return problem
+                return NonlinearVariationalProblem(F, z, bcs, **pparams)
         elif form == "variational":
             v, N, σ = firedrake.TestFunctions(Z)
             fns = [
@@ -155,17 +154,15 @@ def test_convergence_rate_grounded(degree, form):
                     fn(**fields, **rheology, **boundary_ids, test_function=φ)
                     for fn, φ in fns
                 )
-                J = derivative(F, z)
-                problem = NonlinearVariationalProblem(F, z, bcs, J=J, **pparams)
-                return problem
+                return NonlinearVariationalProblem(F, z, bcs, **pparams)
 
+        problem = form_problem(rheology)
+        solver = NonlinearVariationalSolver(problem, **sparams)
         num_continuation_steps = 5
         λs = np.linspace(0.0, 1.0, num_continuation_steps)
         for λ in λs:
             n.assign((1 - λ) + λ * glen_flow_law)
             m.assign((1 - λ) + λ * weertman_sliding_law)
-            problem = form_problem(rheology)
-            solver = NonlinearVariationalSolver(problem, **sparams)
             solver.solve()
 
         u, M, τ = z.subfunctions
@@ -183,12 +180,13 @@ def test_convergence_rate_grounded(degree, form):
 
 
 @pytest.mark.parametrize("degree", [1, 2])
-def test_convergence_rate_floating(degree):
+@pytest.mark.parametrize("form", ("minimization", "variational"))
+def test_convergence_rate_floating(degree, form):
     Lx, Ly = Constant(20e3), Constant(20e3)
     h0, dh = Constant(500.0), Constant(100.0)
     u_inflow = Constant(100.0)
 
-    n = firedrake.Constant(glen_flow_law)
+    n = Constant(glen_flow_law)
 
     τ_c = Constant(0.1)
     ε_c = Constant(0.01)
@@ -230,18 +228,37 @@ def test_convergence_rate_floating(degree):
 
         h = Function(Q).interpolate(h0 - dh * x / Lx)
         inflow_ids = (1,)
-        outflow_ids = (2,)
         side_wall_ids = (3, 4)
 
-        inflow_bc = firedrake.DirichletBC(Z.sub(0), Constant((u_inflow, 0)), inflow_ids)
-        side_wall_bc = firedrake.DirichletBC(Z.sub(0).sub(1), 0, side_wall_ids)
+        inflow_bc = DirichletBC(Z.sub(0), Constant((u_inflow, 0)), inflow_ids)
+        side_wall_bc = DirichletBC(Z.sub(0).sub(1), 0, side_wall_ids)
         bcs = [inflow_bc, side_wall_bc]
 
-        fns = [
-            model.minimization.viscous_power,
-            #model.minimization.calving_terminus,
-            model.minimization.ice_shelf_momentum_balance,
-        ]
+        qdegree = max(8, degree ** glen_flow_law)
+        pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
+
+        if form == "minimization":
+            fns = [
+                model.minimization.viscous_power,
+                model.minimization.ice_shelf_momentum_balance,
+            ]
+
+            def form_problem(rheology):
+                L = sum(fn(**fields, **rheology) for fn in fns)
+                F = derivative(L, z)
+                return NonlinearVariationalProblem(F, z, bcs, **pparams)
+        else:
+            v, N = firedrake.TestFunctions(Z)
+            fns = [
+                (model.variational.flow_law, N),
+                (model.variational.ice_shelf_momentum_balance, v),
+            ]
+
+            def form_problem(rheology):
+                F = sum(
+                    fn(**fields, **rheology, test_function=φ) for fn, φ in fns
+                )
+                return NonlinearVariationalProblem(F, z, bcs, **pparams)
 
         rheology = {
             "flow_law_exponent": n,
@@ -250,14 +267,7 @@ def test_convergence_rate_floating(degree):
 
         u, M = firedrake.split(z)
         fields = {"velocity": u, "membrane_stress": M, "thickness": h}
-
-        boundary_ids = {"outflow_ids": outflow_ids}
-        L = sum(fn(**fields, **rheology, **boundary_ids) for fn in fns)
-        F = derivative(L, z)
-
-        qdegree = max(8, degree ** glen_flow_law)
-        pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
-        problem = NonlinearVariationalProblem(F, z, bcs, **pparams)
+        problem = form_problem(rheology)
         solver = NonlinearVariationalSolver(problem, **sparams)
 
         num_continuation_steps = 5
