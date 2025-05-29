@@ -1,2 +1,1 @@
-from . import model, solvers, constants
-from .embedding import embed
+from . import model, constants
