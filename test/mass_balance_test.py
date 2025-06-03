@@ -48,12 +48,20 @@ def test_convergence_rate(degree):
         t = Constant(0.0)
         dt = firedrake.Constant(δt)
         final_time = 2 * π
+
+        lower, upper = firedrake.Function(Q), firedrake.Function(Q)
+        upper.assign(+np.inf)
+        bounds = ("stage", lower, upper)
         params = {
             "solver_parameters": {
-                "snes_type": "ksponly",
+                "snes_type": "vinewtonrsls",
                 "ksp_type": "gmres",
-                "pc_type": "bjacobi",
+                "pc_type": "lu",
+                "pc_factor_mat_solver_type": "mumps",
             },
+            "stage_type": "value",
+            "basis_type": "Bernstein",
+            "bounds": bounds,
         }
         solver = irksome.TimeStepper(problem, tableau, t, dt, h, **params)
 
