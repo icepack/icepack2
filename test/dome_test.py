@@ -59,9 +59,7 @@ def run_simulation(refinement_level: int):
     Q = firedrake.FunctionSpace(mesh, dg1)
     V = firedrake.VectorFunctionSpace(mesh, cg1)
     Σ = firedrake.TensorFunctionSpace(mesh, dg0, symmetry=True)
-    T = firedrake.VectorFunctionSpace(mesh, cg1)
-    Z = V * Σ * T
-    W = V * Σ * T * Q
+    Z = V * Σ * V * Q
 
     x = firedrake.SpatialCoordinate(mesh)
 
@@ -86,37 +84,22 @@ def run_simulation(refinement_level: int):
     r_h = Constant(5e3)
     H = Constant(100.0)
     expr = H * firedrake.max_value(0, 1 - inner(x, x) / r_h**2)
-    h = firedrake.Function(Q).interpolate(expr)
-    h_0 = h.copy(deepcopy=True)
+    h_0 = firedrake.Function(Q).interpolate(expr)
 
-    s = firedrake.Function(Q).interpolate(b + h)
+    s = firedrake.Function(Q).interpolate(b + h_0)
     a = firedrake.Function(Q).interpolate(smb(s))
 
     # Fluidity of ice in yr⁻¹ MPa⁻³ at 0C
     A = Constant(158.0)
 
     # Make an initial guess for the velocity using SIA
-    u = firedrake.Function(V)
-    v = firedrake.TestFunction(V)
-
     ρ_I = Constant(ice_density)
     g = Constant(gravity)
-
     n = Constant(glen_flow_law)
-
-    P = ρ_I * g * h
-    S_n = inner(grad(s), grad(s))**((n - 1) / 2)
-    u_shear = -2 * A * P ** n / (n + 2) * h * S_n * grad(s)
-    F = inner(u - u_shear, v) * dx
-
-    degree = 1
-    qdegree = max(8, degree ** glen_flow_law)
-    pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
-    firedrake.solve(F == 0, u, **pparams)
 
     # Compute the initial velocity using the dual form of SSA
     z = firedrake.Function(Z)
-    z.sub(0).assign(u);
+    u, M, τ, h = firedrake.split(z)
 
     τ_c = Constant(0.1)
     ε_c = Constant(A * τ_c ** n)
@@ -140,14 +123,17 @@ def run_simulation(refinement_level: int):
         "sliding_coefficient": u_c / τ_c,
     }
 
-    u, M, τ = firedrake.split(z)
     fields = {
         "velocity": u,
         "membrane_stress": M,
         "basal_stress": τ,
         "thickness": h,
-        "surface": s,
+        "surface": b + h,
     }
+
+    degree = 1
+    qdegree = max(8, degree ** glen_flow_law)
+    pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
 
     sparams = {
         "solver_parameters": {
@@ -162,8 +148,10 @@ def run_simulation(refinement_level: int):
     }
 
     print("Initial momentum solve")
-    v, N, σ = firedrake.TestFunctions(Z)
-    F = form_momentum_balance((u, M, τ), (v, N, σ), h, b, H, α, rheo1, rheo3)
+    v, N, σ, η = firedrake.TestFunctions(Z)
+    F_momentum = form_momentum_balance((u, M, τ), (v, N, σ), h, b, H, α, rheo1, rheo3)
+    F_mass = (h - h_0) * η * dx
+    F = F_momentum + F_mass
     problem = firedrake.NonlinearVariationalProblem(F, z, **pparams)
     solver = firedrake.NonlinearVariationalSolver(problem, **sparams)
 
@@ -172,27 +160,15 @@ def run_simulation(refinement_level: int):
         n.assign(exponent)
         solver.solve()
 
-    # Time-dependent solve
-    w = firedrake.Function(W)
-    w.sub(0).assign(z.sub(0))
-    w.sub(1).assign(z.sub(1))
-    w.sub(2).assign(z.sub(2))
-    w.sub(3).assign(h);
-
-    u, M, τ, h = firedrake.split(w)
-    v, N, σ, η = firedrake.TestFunctions(W)
-
-    F = (
-        form_momentum_balance((u, M, τ), (v, N, σ), h, b, H, α, rheo1, rheo3)
-        + mass_balance(thickness=h, velocity=u, accumulation=a, test_function=η)
-    )
+    F_mass = mass_balance(thickness=h, velocity=u, accumulation=a, test_function=η)
+    F = F_momentum + F_mass
 
     tableau = irksome.BackwardEuler()
     t = Constant(0.0)
     dt = Constant(1.0 / 6)
 
-    lower = firedrake.Function(W)
-    upper = firedrake.Function(W)
+    lower = firedrake.Function(Z)
+    upper = firedrake.Function(Z)
     lower.assign(-np.inf)
     upper.assign(+np.inf)
     lower.subfunctions[3].assign(0.0)
@@ -212,21 +188,21 @@ def run_simulation(refinement_level: int):
         "bounds": bounds,
     }
 
-    solver = irksome.TimeStepper(F, tableau, t, dt, w, **bparams, **pparams)
+    solver = irksome.TimeStepper(F, tableau, t, dt, z, **bparams, **pparams)
 
-    us = [w.subfunctions[0].copy(deepcopy=True)]
-    hs = [w.subfunctions[3].copy(deepcopy=True)]
+    us = [z.subfunctions[0].copy(deepcopy=True)]
+    hs = [z.subfunctions[3].copy(deepcopy=True)]
 
     print("Time-dependent solves")
     final_time = 300.0
     num_steps = int(final_time / float(dt))
     for step in range(num_steps):
         solver.advance()
-        h = w.subfunctions[3]
+        h = z.subfunctions[3]
         a.interpolate(smb(b + h))
 
-        us.append(w.subfunctions[0].copy(deepcopy=True))
-        hs.append(w.subfunctions[3].copy(deepcopy=True))
+        us.append(z.subfunctions[0].copy(deepcopy=True))
+        hs.append(z.subfunctions[3].copy(deepcopy=True))
 
     return hs, us
 
