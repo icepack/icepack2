@@ -101,18 +101,7 @@ def run_simulation(refinement_level: int):
 
     ρ_I = Constant(ice_density)
     g = Constant(gravity)
-
     n = Constant(glen_flow_law)
-
-    P = ρ_I * g * h
-    S_n = inner(grad(s), grad(s))**((n - 1) / 2)
-    u_shear = -2 * A * P ** n / (n + 2) * h * S_n * grad(s)
-    F = inner(u - u_shear, v) * dx
-
-    degree = 1
-    qdegree = max(8, degree ** glen_flow_law)
-    pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
-    firedrake.solve(F == 0, u, **pparams)
 
     # Compute the initial velocity using the dual form of SSA
     z = firedrake.Function(Z)
@@ -146,8 +135,12 @@ def run_simulation(refinement_level: int):
         "membrane_stress": M,
         "basal_stress": τ,
         "thickness": h,
-        "surface": s,
+        "surface": b + h,
     }
+
+    degree = 1
+    qdegree = max(8, degree ** glen_flow_law)
+    pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
 
     sparams = {
         "solver_parameters": {
@@ -177,7 +170,7 @@ def run_simulation(refinement_level: int):
     w.sub(0).assign(z.sub(0))
     w.sub(1).assign(z.sub(1))
     w.sub(2).assign(z.sub(2))
-    w.sub(3).assign(h);
+    w.sub(3).assign(h)
 
     u, M, τ, h = firedrake.split(w)
     v, N, σ, η = firedrake.TestFunctions(W)
