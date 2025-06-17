@@ -89,10 +89,8 @@ def run_simulation(refinement_level: int):
     s = firedrake.Function(Q).interpolate(b + h_0)
     a = firedrake.Function(Q).interpolate(smb(s))
 
-    # Fluidity of ice in yr⁻¹ MPa⁻³ at 0C
+    # Some physical constants; fluidity of ice is at 0C in yr⁻¹ MPa⁻³
     A = Constant(158.0)
-
-    # Make an initial guess for the velocity using SIA
     ρ_I = Constant(ice_density)
     g = Constant(gravity)
     n = Constant(glen_flow_law)
