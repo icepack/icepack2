@@ -36,9 +36,10 @@ def flow_law(**kwargs):
 def friction_law(**kwargs):
     τ, u, σ = map(kwargs.get, ("basal_stress", "velocity", "test_function"))
     K, m = map(kwargs.get, ("sliding_coefficient", "sliding_exponent"))
+    f = kwargs.get("floating", Constant(1.0))
     τ_2 = inner(τ, τ)
     τ_m = conditional(eq(m, 1), Constant(1.0), τ_2 ** ((m - 1) / 2))
-    return inner(K * τ_m * τ + u, σ) * dx
+    return inner(K * τ_m * τ + f * u, σ) * dx
 
 
 def calving_terminus(**kwargs):
