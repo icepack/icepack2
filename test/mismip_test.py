@@ -1,13 +1,14 @@
+import numpy as np
 import firedrake
 from firedrake import (
     sqrt, exp, max_value, inner, as_vector, Constant, dx
 )
-from icepack2.model import mass_Balance
+from icepack2.model import mass_balance
 from icepack2.model.variational import (
     momentum_balance, flow_law, friction_law, calving_terminus
 )
 from icepack2.constants import (
-    gravity, ice_density, glen_flow_law, weertman_sliding_law
+    gravity, ice_density, water_density, glen_flow_law, weertman_sliding_law
 )
 
 
@@ -111,6 +112,10 @@ def run_simulation(ny: int):
     τ_c = Constant(0.1)
     ε_c = Constant(A * τ_c ** n)
 
+    ρ_I = Constant(ice_density)
+    ρ_W = Constant(water_density)
+    g = Constant(gravity)
+
     # Friction coefficient in MPa (m yr⁻¹)⁻¹ᐟ³
     C = Constant(1e-2)
     K = C ** (-m) ## TODO: just use 1e6
@@ -119,11 +124,10 @@ def run_simulation(ny: int):
     rheo3 = {
         "flow_law_exponent": n,
         "flow_law_coefficient": ε_c / τ_c ** n,
-        "sliding_exponent": n,
-        "sliding_coefficient": u_c / τ_c ** n,
+        "sliding_exponent": m,
+        "sliding_coefficient": u_c / τ_c ** m,
     }
 
-    α = firedrake.Constant(1e-4)
     rheo1 = {
         "flow_law_exponent": 1,
         "flow_law_coefficient": ε_c / τ_c,
@@ -134,8 +138,12 @@ def run_simulation(ny: int):
     z = firedrake.Function(Z)
     u, M, τ, h = firedrake.split(z)
     s = max_value(b + h, (1 - ρ_I / ρ_W) * h)
-    # TODO: figure this one out
-    f = None
+
+    # TODO: Think very hard about the float mask
+    p_I = ρ_I * g * h
+    p_W = ρ_W * g * max_value(0, -(s - h))
+    N = max_value(0, p_I - p_W)
+    f = N / (2 * τ_c)
 
     fields = {
         "velocity": u,
@@ -163,7 +171,11 @@ def run_simulation(ny: int):
     }
 
     print("Initial momentum solve")
+    α = firedrake.Constant(1e-4)
+    H = Constant(500.0)
+
     v, N, σ, η = firedrake.TestFunctions(Z)
+
     F_momentum = form_momentum_balance((u, M, τ), (v, N, σ), h, b, H, α, rheo1, rheo3)
     F_mass = (h - h_0) * η * dx
     F = F_momentum + F_mass
@@ -175,3 +187,7 @@ def run_simulation(ny: int):
         n.assign((1 - r) + r * glen_flow_law)
         m.assign((1 - r) + r * weertman_sliding_law)
         solver.solve()
+
+
+def test_mismip():
+    run_simulation(ny=20)
