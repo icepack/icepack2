@@ -20,6 +20,8 @@ from ..constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
 
 
 def flow_law(**kwargs):
+    r"""Return the symbolic form of the flow law, i.e. the relation between the
+    strain rate and membrane stress tensors"""
     field_names = ("thickness", "membrane_stress", "velocity", "test_function")
     h, M, u, N = map(kwargs.get, field_names)
     A, n = map(kwargs.get, ("flow_law_coefficient", "flow_law_exponent"))
@@ -34,6 +36,8 @@ def flow_law(**kwargs):
 
 
 def friction_law(**kwargs):
+    r"""Return the symbolic form of the sliding law, i.e. the relation between
+    the basal sliding velocity and the basal drag vectors"""
     τ, u, σ = map(kwargs.get, ("basal_stress", "velocity", "test_function"))
     K, m = map(kwargs.get, ("sliding_coefficient", "sliding_exponent"))
     τ_2 = inner(τ, τ)
@@ -42,6 +46,8 @@ def friction_law(**kwargs):
 
 
 def calving_terminus(**kwargs):
+    r"""Return the symbolic form of the pressure exerted at the terminus of a
+    glacier that flows into a water body"""
     h, s, v = map(kwargs.get, ("thickness", "surface", "test_function"))
     outflow_ids = kwargs["outflow_ids"]
 
@@ -58,6 +64,7 @@ def calving_terminus(**kwargs):
 
 
 def momentum_balance(**kwargs):
+    r"""Return the symbolic form of the constraint of momentum balance"""
     field_names = (
         "membrane_stress",
         "basal_stress",
@@ -78,6 +85,12 @@ def momentum_balance(**kwargs):
 
 
 def ice_shelf_momentum_balance(**kwargs):
+    r"""Return the symbolic form of the constraint of momentum balance for the
+    special case of floating ice shelves in hydrostatic balance
+
+    Floating ice shelves are simpler because there is no basal shear stress
+    and we assume the ice is hydrostatic, in which case the surface
+    elevation is proportional to the thickness."""
     field_names = ("membrane_stress", "thickness", "test_function")
     M, h, v = map(kwargs.get, field_names)
     ε = sym(grad(v))

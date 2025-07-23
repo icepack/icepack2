@@ -20,7 +20,7 @@ from ..constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
 
 
 def viscous_power(**kwargs):
-    r"""Return the viscous power dissipation"""
+    r"""Return the symbolic form of the viscous power dissipation rate"""
     # Get all the dynamical fields
     field_names = ("membrane_stress", "thickness")
     M, h = map(kwargs.get, field_names)
@@ -38,7 +38,7 @@ def viscous_power(**kwargs):
 
 
 def friction_power(**kwargs):
-    r"""Return the frictional power dissipation"""
+    r"""Return the symbolic form of the frictional power dissipation rate"""
     τ = kwargs["basal_stress"]
     parameter_names = ("sliding_coefficient", "sliding_exponent")
     K, m = map(kwargs.get, parameter_names)
@@ -48,7 +48,8 @@ def friction_power(**kwargs):
 
 
 def calving_terminus(**kwargs):
-    r"""Return the power dissipation from the terminus boundary condition"""
+    r"""Return the symbolic form of the power dissipation at the terminus
+    of a glacier that flows into a water body"""
     # Get all the dynamical fields and boundary conditions
     u, h, s = map(kwargs.get, ("velocity", "thickness", "surface"))
     outflow_ids = kwargs["outflow_ids"]
@@ -67,7 +68,7 @@ def calving_terminus(**kwargs):
 
 
 def momentum_balance(**kwargs):
-    r"""Return the momentum balance constraint"""
+    r"""Return the symbolic form of the momentum balance constraint"""
     field_names = (
         "velocity", "membrane_stress", "basal_stress", "thickness", "surface"
     )
@@ -84,7 +85,8 @@ def momentum_balance(**kwargs):
 
 
 def ice_shelf_momentum_balance(**kwargs):
-    r"""Return the momentum balance constraint for floating ice shelves
+    r"""Return the symbolic form of the momentum balance constraint for the
+    special case of floating ice shelves in hydrostatic balance
 
     Floating ice shelves are simpler because there is no basal shear stress
     and we assume the ice is hydrostatic, in which case the surface
