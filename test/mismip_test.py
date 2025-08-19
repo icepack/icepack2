@@ -41,12 +41,11 @@ def mismip_bed_topography(x):
     return max_value(B_x + B_y, z_deep)
 
 
-def form_momentum_balance(z, w, h, s, H, α, rheo1, rheo3):
+def form_momentum_balance(z, w, h, s, f, H, α, rheo1, rheo3):
     u, M, τ = z
     v, N, σ = w
 
     F_stress_balance = momentum_balance(
-        velocity=u,
         membrane_stress=M,
         basal_stress=τ,
         thickness=h,
@@ -63,11 +62,11 @@ def form_momentum_balance(z, w, h, s, H, α, rheo1, rheo3):
     )
 
     F_weertman_drag = friction_law(
-        velocity=u, basal_stress=τ, **rheo3, test_function=σ
+        velocity=u, basal_stress=τ, floating=f, **rheo3, test_function=σ
     )
 
     F_viscous_drag = α * friction_law(
-        velocity=u, basal_stress=τ, **rheo1, test_function=σ
+        velocity=u, basal_stress=τ, floating=f, **rheo1, test_function=σ
     )
 
     F_terminus = calving_terminus(
@@ -125,7 +124,7 @@ def run_simulation(ny: int):
     # Friction coefficient in MPa (m yr⁻¹)⁻¹ᐟ³
     C = Constant(1e-2)
     K = C ** (-m) ## TODO: just use 1e6
-    u_c = K * τ_c ** n
+    u_c = K * τ_c ** m
 
     rheo3 = {
         "flow_law_exponent": n,
@@ -142,6 +141,10 @@ def run_simulation(ny: int):
     }
 
     z = firedrake.Function(Z)
+    δu = Constant(90.0)
+    Lx = Constant(lx)
+    u_expr = firedrake.as_vector((δu * x[0] / Lx, 0))
+    z.sub(0).interpolate(u_expr)
     z.sub(3).assign(h_0)
     u, M, τ, h = firedrake.split(z)
     s = max_value(b + h, (1 - ρ_I / ρ_W) * h)
@@ -162,7 +165,7 @@ def run_simulation(ny: int):
     }
 
     inflow_bc = firedrake.DirichletBC(Z.sub(0), Constant((0, 0)), [1])
-    side_wall_bc = firedrake.DirichletBC(Z.sub(0), Constant((0, 0)), [3, 4])
+    side_wall_bc = firedrake.DirichletBC(Z.sub(0).sub(1), Constant(0), [3, 4])
     bcs = [inflow_bc, side_wall_bc]
 
     degree = 1
@@ -189,7 +192,7 @@ def run_simulation(ny: int):
 
     v, N, σ, η = firedrake.TestFunctions(Z)
 
-    F_momentum = form_momentum_balance((u, M, τ), (v, N, σ), h, s, H, α, rheo1, rheo3)
+    F_momentum = form_momentum_balance((u, M, τ), (v, N, σ), h, s, f, H, α, rheo1, rheo3)
     F_mass = (h - h_0) * η * dx
     F = F_momentum + F_mass
     problem = firedrake.NonlinearVariationalProblem(F, z, **pparams, bcs=bcs)
