@@ -83,7 +83,6 @@ def form_momentum_balance(z, w, h, s, f, H, α, rheo1, rheo3):
     )
 
 
-
 def run_simulation(ny: int):
     nx = int(lx / ly) * ny
     mesh = firedrake.RectangleMesh(nx, ny, lx, ly, diagonal="crossed")
@@ -123,8 +122,8 @@ def run_simulation(ny: int):
 
     # Friction coefficient in MPa (m yr⁻¹)⁻¹ᐟ³
     C = Constant(1e-2)
-    K = C ** (-m) ## TODO: just use 1e6
-    u_c = K * τ_c ** m
+    K = Constant(C ** (-m)) ## TODO: just use 1e6
+    u_c = Constant(K * τ_c ** m)
 
     rheo3 = {
         "flow_law_exponent": n,
@@ -164,8 +163,8 @@ def run_simulation(ny: int):
         "floating": f,
     }
 
-    inflow_bc = firedrake.DirichletBC(Z.sub(0), Constant((0, 0)), [1])
-    side_wall_bc = firedrake.DirichletBC(Z.sub(0).sub(1), Constant(0), [3, 4])
+    inflow_bc = firedrake.DirichletBC(Z.sub(0), 0, [1])
+    side_wall_bc = firedrake.DirichletBC(Z.sub(0).sub(1), 0, [3, 4])
     bcs = [inflow_bc, side_wall_bc]
 
     degree = 1
