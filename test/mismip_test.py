@@ -1,8 +1,9 @@
 import numpy as np
 import firedrake
 from firedrake import (
-    sqrt, exp, max_value, inner, as_vector, Constant, dx
+    sqrt, exp, min_value, max_value, inner, as_vector, Constant, dx
 )
+from irksome import BackwardEuler, TimeStepper
 from icepack2.model import mass_balance
 from icepack2.model.variational import (
     momentum_balance, flow_law, friction_law, calving_terminus
@@ -40,7 +41,7 @@ def mismip_bed_topography(x):
     return max_value(B_x + B_y, z_deep)
 
 
-def form_momentum_balance(z, w, h, b, H, α, rheo1, rheo3):
+def form_momentum_balance(z, w, h, s, H, α, rheo1, rheo3):
     u, M, τ = z
     v, N, σ = w
 
@@ -49,7 +50,7 @@ def form_momentum_balance(z, w, h, b, H, α, rheo1, rheo3):
         membrane_stress=M,
         basal_stress=τ,
         thickness=h,
-        surface=b + h,
+        surface=s,
         test_function=v,
     )
 
@@ -69,12 +70,17 @@ def form_momentum_balance(z, w, h, b, H, α, rheo1, rheo3):
         velocity=u, basal_stress=τ, **rheo1, test_function=σ
     )
 
+    F_terminus = calving_terminus(
+        thickness=h, surface=s, test_function=v, outflow_ids=(2,)
+    )
+
     return (
         F_stress_balance
         + F_glen_law
         + F_linear_law
         + F_weertman_drag
         + F_viscous_drag
+        + F_terminus
     )
 
 
@@ -136,6 +142,7 @@ def run_simulation(ny: int):
     }
 
     z = firedrake.Function(Z)
+    z.sub(3).assign(h_0)
     u, M, τ, h = firedrake.split(z)
     s = max_value(b + h, (1 - ρ_I / ρ_W) * h)
 
@@ -143,7 +150,7 @@ def run_simulation(ny: int):
     p_I = ρ_I * g * h
     p_W = ρ_W * g * max_value(0, -(s - h))
     N = max_value(0, p_I - p_W)
-    f = N / (2 * τ_c)
+    f = min_value(N / (2 * τ_c), 1.0)
 
     fields = {
         "velocity": u,
@@ -154,9 +161,15 @@ def run_simulation(ny: int):
         "floating": f,
     }
 
+    inflow_bc = firedrake.DirichletBC(Z.sub(0), Constant((0, 0)), [1])
+    side_wall_bc = firedrake.DirichletBC(Z.sub(0), Constant((0, 0)), [3, 4])
+    bcs = [inflow_bc, side_wall_bc]
+
     degree = 1
     qdegree = max(8, degree ** glen_flow_law)
-    pparams = {"form_compiler_parameters": {"quadrature_degree": qdegree}}
+    pparams = {
+        "form_compiler_parameters": {"quadrature_degree": qdegree}
+    }
 
     sparams = {
         "solver_parameters": {
@@ -176,10 +189,10 @@ def run_simulation(ny: int):
 
     v, N, σ, η = firedrake.TestFunctions(Z)
 
-    F_momentum = form_momentum_balance((u, M, τ), (v, N, σ), h, b, H, α, rheo1, rheo3)
+    F_momentum = form_momentum_balance((u, M, τ), (v, N, σ), h, s, H, α, rheo1, rheo3)
     F_mass = (h - h_0) * η * dx
     F = F_momentum + F_mass
-    problem = firedrake.NonlinearVariationalProblem(F, z, **pparams)
+    problem = firedrake.NonlinearVariationalProblem(F, z, **pparams, bcs=bcs)
     solver = firedrake.NonlinearVariationalSolver(problem, **sparams)
 
     num_continuation_steps = 5
@@ -187,6 +200,53 @@ def run_simulation(ny: int):
         n.assign((1 - r) + r * glen_flow_law)
         m.assign((1 - r) + r * weertman_sliding_law)
         solver.solve()
+
+    print("Time-dependent solve")
+    F_mass = mass_balance(
+        thickness=h,
+        velocity=u,
+        accumulation=a,
+        thickness_inflow=h_0,
+        test_function=η,
+    )
+
+    t = Constant(0.0)
+    timestep = 1.0
+    dt = Constant(timestep)
+    F = F_momentum + F_mass
+
+    lower = firedrake.Function(Z)
+    upper = firedrake.Function(Z)
+    lower.assign(-np.inf)
+    upper.assign(+np.inf)
+    lower.subfunctions[3].assign(0.0)
+
+    params = {
+        "solver_parameters": {
+            "snes_monitor": None,
+            "snes_type": "vinewtonrsls",
+            "snes_max_it": 200,
+            "snes_linesearch_type": "nleqerr",
+            "ksp_type": "gmres",
+            "pc_type": "lu",
+            "pc_factor_mat_solver_type": "mumps",
+        },
+        "stage_type": "value",
+        "basis_type": "Bernstein",
+        "bounds": ("stage", lower, upper),
+    }
+    method = BackwardEuler()
+    solver = TimeStepper(F, method, t, dt, z, **params, **pparams, bcs=bcs)
+
+    final_time = 1.0
+    num_steps = int(final_time / timestep)
+    for step in range(num_steps):
+        solver.advance()
+
+    u, M, τ, h = z.subfunctions
+    firedrake.assemble((h - h_0) * dx)
+
+    return z
 
 
 def test_mismip():
