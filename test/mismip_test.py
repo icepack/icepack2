@@ -105,7 +105,7 @@ def run_simulation(ny: int):
     a = Constant(0.3)
 
     # Make the initial thickness
-    h_0 = firedrake.Function(Q).assign(Constant(100.0))
+    h_initial = firedrake.Function(Q).assign(Constant(100.0))
 
     # Fluidity of ice in yr⁻¹ MPa⁻³
     A = Constant(20.0)
@@ -144,7 +144,7 @@ def run_simulation(ny: int):
     Lx = Constant(lx)
     u_expr = firedrake.as_vector((δu * x[0] / Lx, 0))
     z.sub(0).interpolate(u_expr)
-    z.sub(3).assign(h_0)
+    z.sub(3).assign(h_initial)
     u, M, τ, h = firedrake.split(z)
     s = max_value(b + h, (1 - ρ_I / ρ_W) * h)
 
@@ -159,7 +159,7 @@ def run_simulation(ny: int):
         "membrane_stress": M,
         "basal_stress": τ,
         "thickness": h,
-        "surface": max_value(b + h, (1 - ρ_I / ρ_W) * h),
+        "surface": s, #max_value(b + h, (1 - ρ_I / ρ_W) * h),
         "floating": f,
     }
 
@@ -175,7 +175,7 @@ def run_simulation(ny: int):
 
     sparams = {
         "solver_parameters": {
-            "snes_monitor": None,
+            #"snes_monitor": None,
             "snes_type": "newtonls",
             "snes_max_it": 200,
             "snes_linesearch_type": "nleqerr",
@@ -190,32 +190,36 @@ def run_simulation(ny: int):
     H = Constant(500.0)
 
     v, N, σ, η = firedrake.TestFunctions(Z)
+    z_0 = z.copy(deepcopy=True)
+    u_0, M_0, τ_0, h_0 = firedrake.split(z_0)
 
     F_momentum = form_momentum_balance((u, M, τ), (v, N, σ), h, s, f, H, α, rheo1, rheo3)
     F_mass = (h - h_0) * η * dx
     F = F_momentum + F_mass
     problem = firedrake.NonlinearVariationalProblem(F, z, **pparams, bcs=bcs)
-    solver = firedrake.NonlinearVariationalSolver(problem, **sparams)
+    momentum_solver = firedrake.NonlinearVariationalSolver(problem, **sparams)
 
     num_continuation_steps = 5
     for r in np.linspace(0.0, 1.0, num_continuation_steps):
         n.assign((1 - r) + r * glen_flow_law)
         m.assign((1 - r) + r * weertman_sliding_law)
-        solver.solve()
+        momentum_solver.solve()
 
     print("Time-dependent solve")
     F_mass = mass_balance(
         thickness=h,
         velocity=u,
         accumulation=a,
-        thickness_inflow=h_0,
+        thickness_inflow=h_initial,
         test_function=η,
     )
 
     t = Constant(0.0)
-    timestep = 1.0
+    timestep = 2.0
     dt = Constant(timestep)
-    F = F_momentum + F_mass
+    F_dummy = (
+        inner(u - u_0, v) * dx + inner(M - M_0, N) * dx + inner(τ - τ_0, σ) * dx
+    )
 
     lower = firedrake.Function(Z)
     upper = firedrake.Function(Z)
@@ -226,10 +230,16 @@ def run_simulation(ny: int):
     params = {
         "solver_parameters": {
             "snes_monitor": None,
+            "snes_converged_reason": None,
+            #"snes_linesearch_monitor": None,
             "snes_type": "vinewtonrsls",
-            "snes_max_it": 200,
-            "snes_linesearch_type": "nleqerr",
-            "ksp_type": "gmres",
+            "snes_max_it": 50,
+            #"snes_atol": 2e-6,
+            "snes_stol": 1e-15,
+            #"snes_convergence_test": "skip",
+            "snes_linesearch_type": "l2",
+            "snes_linesearch_max_it": 5,
+            "ksp_type": "preonly",
             "pc_type": "lu",
             "pc_factor_mat_solver_type": "mumps",
         },
