@@ -175,7 +175,7 @@ def run_simulation(ny: int):
 
     sparams = {
         "solver_parameters": {
-            #"snes_monitor": None,
+            "snes_monitor": None,
             "snes_type": "newtonls",
             "snes_max_it": 200,
             "snes_linesearch_type": "nleqerr",
@@ -215,7 +215,7 @@ def run_simulation(ny: int):
     )
 
     t = Constant(0.0)
-    timestep = 2.0
+    timestep = 1.0
     dt = Constant(timestep)
     F_dummy = (
         inner(u - u_0, v) * dx + inner(M - M_0, N) * dx + inner(τ - τ_0, σ) * dx
@@ -233,10 +233,10 @@ def run_simulation(ny: int):
             "snes_converged_reason": None,
             #"snes_linesearch_monitor": None,
             "snes_type": "vinewtonrsls",
-            "snes_max_it": 50,
-            #"snes_atol": 2e-6,
-            "snes_stol": 1e-15,
-            #"snes_convergence_test": "skip",
+            "snes_max_it": 5,
+            "snes_atol": 2e-6,
+            "snes_stol": 1e-8,
+            "snes_convergence_test": "skip",
             "snes_linesearch_type": "l2",
             "snes_linesearch_max_it": 5,
             "ksp_type": "preonly",
@@ -248,12 +248,14 @@ def run_simulation(ny: int):
         "bounds": ("stage", lower, upper),
     }
     method = BackwardEuler()
-    solver = TimeStepper(F, method, t, dt, z, **params, **pparams, bcs=bcs)
+    mass_solver = TimeStepper(F_mass + F_dummy, method, t, dt, z, **params, **pparams)
 
-    final_time = 1.0
+    final_time = 50.0
     num_steps = int(final_time / timestep)
     for step in range(num_steps):
-        solver.advance()
+        mass_solver.advance()
+        momentum_solver.solve()
+        z_0.assign(z)
 
     u, M, τ, h = z.subfunctions
     firedrake.assemble((h - h_0) * dx)
