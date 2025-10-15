@@ -31,10 +31,7 @@ def test_convergence_rate(degree):
         u = firedrake.as_vector((-w[1], w[0]))
 
         problem = model.mass_balance(
-            thickness=h,
-            velocity=u,
-            accumulation=Constant(0.0),
-            test_function=firedrake.TestFunction(Q),
+            thickness=h, velocity=u, accumulation=Constant(0.0),
         )
 
         tableau = irksome.BackwardEuler()

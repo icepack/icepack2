@@ -8,9 +8,8 @@ from icepack2.model.variational import momentum_balance, flow_law, friction_law
 from icepack2.constants import gravity, ice_density, glen_flow_law
 
 
-def form_momentum_balance(z, w, h, b, H, α, rheo1, rheo3):
+def form_momentum_balance(z, h, b, H, α, rheo1, rheo3):
     u, M, τ = z
-    v, N, σ = w
 
     F_stress_balance = momentum_balance(
         velocity=u,
@@ -18,24 +17,12 @@ def form_momentum_balance(z, w, h, b, H, α, rheo1, rheo3):
         basal_stress=τ,
         thickness=h,
         surface=b + h,
-        test_function=v,
     )
 
-    F_glen_law = flow_law(
-        velocity=u, membrane_stress=M, thickness=H, **rheo3, test_function=N
-    )
-
-    F_linear_law = α * flow_law(
-        velocity=u, membrane_stress=M, thickness=H, **rheo1, test_function=N
-    )
-
-    F_weertman_drag = friction_law(
-        velocity=u, basal_stress=τ, **rheo3, test_function=σ
-    )
-
-    F_viscous_drag = α * friction_law(
-        velocity=u, basal_stress=τ, **rheo1, test_function=σ
-    )
+    F_glen_law = flow_law(velocity=u, membrane_stress=M, thickness=H, **rheo3)
+    F_linear_law = α * flow_law(velocity=u, membrane_stress=M, thickness=H, **rheo1)
+    F_weertman_drag = friction_law(velocity=u, basal_stress=τ, **rheo3)
+    F_viscous_drag = α * friction_law(velocity=u, basal_stress=τ, **rheo1)
 
     return (
         F_stress_balance
@@ -149,7 +136,7 @@ def run_simulation(refinement_level: int):
 
     print("Initial momentum solve")
     v, N, σ, η = firedrake.TestFunctions(Z)
-    F_momentum = form_momentum_balance((u, M, τ), (v, N, σ), h, b, H, α, rheo1, rheo3)
+    F_momentum = form_momentum_balance((u, M, τ), h, b, H, α, rheo1, rheo3)
     F_mass = (h - h_0) * η * dx
     F = F_momentum + F_mass
     problem = firedrake.NonlinearVariationalProblem(F, z, **pparams)
@@ -160,7 +147,7 @@ def run_simulation(refinement_level: int):
         n.assign(exponent)
         solver.solve()
 
-    F_mass = mass_balance(thickness=h, velocity=u, accumulation=a, test_function=η)
+    F_mass = mass_balance(thickness=h, velocity=u, accumulation=a)
     F = F_momentum + F_mass
 
     tableau = irksome.BackwardEuler()

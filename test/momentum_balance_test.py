@@ -141,19 +141,15 @@ def test_convergence_rate_grounded(degree, form):
                 F = derivative(L, z)
                 return NonlinearVariationalProblem(F, z, bcs, **pparams)
         elif form == "variational":
-            v, N, σ = firedrake.TestFunctions(Z)
             fns = [
-                (model.variational.flow_law, N),
-                (model.variational.friction_law, σ),
-                (model.variational.calving_terminus, v),
-                (model.variational.momentum_balance, v),
+                model.variational.flow_law,
+                model.variational.friction_law,
+                model.variational.calving_terminus,
+                model.variational.momentum_balance,
             ]
 
             def form_problem(rheology):
-                F = sum(
-                    fn(**fields, **rheology, **boundary_ids, test_function=φ)
-                    for fn, φ in fns
-                )
+                F = sum(fn(**fields, **rheology, **boundary_ids) for fn in fns)
                 return NonlinearVariationalProblem(F, z, bcs, **pparams)
 
         problem = form_problem(rheology)
@@ -248,16 +244,13 @@ def test_convergence_rate_floating(degree, form):
                 F = derivative(L, z)
                 return NonlinearVariationalProblem(F, z, bcs, **pparams)
         else:
-            v, N = firedrake.TestFunctions(Z)
             fns = [
-                (model.variational.flow_law, N),
-                (model.variational.ice_shelf_momentum_balance, v),
+                model.variational.flow_law,
+                model.variational.ice_shelf_momentum_balance,
             ]
 
             def form_problem(rheology):
-                F = sum(
-                    fn(**fields, **rheology, test_function=φ) for fn, φ in fns
-                )
+                F = sum(fn(**fields, **rheology) for fn in fns)
                 return NonlinearVariationalProblem(F, z, bcs, **pparams)
 
         rheology = {

@@ -47,8 +47,8 @@ def test_composite_rheology_floating(degree):
     g = Constant(constants.gravity)
 
     # Use a combination of two different rheology exponents.
-    n_1 = firedrake.Constant(1.0)
-    n_3 = firedrake.Constant(constants.glen_flow_law)
+    n_1 = Constant(1.0)
+    n_3 = Constant(constants.glen_flow_law)
 
     τ_c = Constant(0.1)
     ε_c = Constant(0.01)
@@ -252,11 +252,11 @@ def test_composite_rheology_grounded(degree):
     ρ_W = Constant(constants.water_density)
     g = Constant(constants.gravity)
 
-    n_1 = firedrake.Constant(1.0)
-    n_3 = firedrake.Constant(constants.glen_flow_law)
+    n_1 = Constant(1.0)
+    n_3 = Constant(constants.glen_flow_law)
 
-    m_1 = firedrake.Constant(1.0)
-    m_3 = firedrake.Constant(constants.weertman_sliding_law)
+    m_1 = Constant(1.0)
+    m_3 = Constant(constants.weertman_sliding_law)
 
     τ_c = Constant(0.1)
     ε_1 = Constant(0.001)

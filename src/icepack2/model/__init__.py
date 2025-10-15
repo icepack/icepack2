@@ -3,13 +3,14 @@ from firedrake import (
     max_value, min_value, jump, inner, grad, dx, ds, dS, FacetNormal, Constant
 )
 from irksome import Dt
-from . import variational, minimization
+from . import variational, minimization, utilities
 
 
 def mass_balance(**kwargs):
     r"""Return the mass balance equation"""
-    field_names = ("thickness", "velocity", "accumulation", "test_function")
-    h, u, a, φ = map(kwargs.get, field_names)
+    field_names = ("thickness", "velocity", "accumulation")
+    h, u, a = map(kwargs.get, field_names)
+    φ = utilities.get_test_function(h)
     h_inflow = kwargs.get("thickness_inflow", Constant(0.0))
 
     cell_balance = (Dt(h) * φ - inner(h * u, grad(φ)) - a * φ) * dx
