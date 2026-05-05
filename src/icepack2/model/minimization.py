@@ -4,20 +4,19 @@ from firedrake import (
     conditional,
     Constant,
     inner,
-    tr,
     sym,
-    grad,
     div,
     dx,
     ds,
     dS,
+    dS_v,
     avg,
     jump,
     FacetNormal,
     min_value,
 )
 from ..constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
-
+from icepack.calculus import grad, trace as tr, get_mesh_axes
 
 def viscous_power(**kwargs):
     r"""Return the symbolic form of the viscous power dissipation rate"""
@@ -30,7 +29,11 @@ def viscous_power(**kwargs):
     A, n = map(kwargs.get, parameter_names)
 
     mesh = ufl.domain.extract_unique_domain(M)
-    d = mesh.geometric_dimension()
+    axes = get_mesh_axes(mesh)
+    if axes in ["xy", "x"]:
+        d = mesh.geometric_dimension()
+    else:
+        d = mesh.geometric_dimension() - 1
 
     M_2 = (inner(M, M) - tr(M) ** 2 / (d + 1)) / 2
     M_n = conditional(eq(n, 1), M_2, M_2 ** ((n + 1) / 2))
@@ -79,7 +82,13 @@ def momentum_balance(**kwargs):
 
     mesh = ufl.domain.extract_unique_domain(u)
     ν = FacetNormal(mesh)
-    facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν), avg(u)) * dS
+    axes = get_mesh_axes(mesh)
+    if axes in ["xy", "x"]:
+        facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν), avg(u)) * dS
+    else:
+        facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν)[0], avg(u)[0]) * dS_v
+        for dim in range(1, mesh.geometric_dimension() - 1):
+            facet_balance += ρ_I * g * avg(h) * inner(jump(s, ν)[dim], avg(u)[dim]) * dS_v
 
     return cell_balance + facet_balance
 
