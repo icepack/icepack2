@@ -5,7 +5,6 @@ from firedrake import (
     Constant,
     inner,
     sym,
-    div,
     dx,
     ds,
     dS,
@@ -16,7 +15,7 @@ from firedrake import (
     min_value,
 )
 from ..constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
-from icepack.calculus import grad, trace as tr, get_mesh_axes
+from icepack.calculus import grad, div, trace as tr, get_mesh_axes
 
 def viscous_power(**kwargs):
     r"""Return the symbolic form of the viscous power dissipation rate"""
