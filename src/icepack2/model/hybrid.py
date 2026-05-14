@@ -94,9 +94,9 @@ def bed_friction_power(**kwargs):
 def momentum_balance(**kwargs):
     r"""Return the symbolic form of the momentum balance constraint"""
     field_names = (
-        "velocity", "membrane_stress_x", "membrane_stress_z", "basal_stress", "thickness", "surface"
+        "velocity", "membrane_stress_x", "membrane_stress_z", "thickness", "surface"
     )
-    u, Mx, Mz, τ, h, s = map(kwargs.get, field_names)
+    u, Mx, Mz, h, s = map(kwargs.get, field_names)
     ε_x = horizontal_strain_rate(velocity=u, thickness=h, surface=s)
     ε_z = vertical_strain_rate(velocity=u, thickness=h, surface=s)
     f = kwargs.get("floating", Constant(1.0))
