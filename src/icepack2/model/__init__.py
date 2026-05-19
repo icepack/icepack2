@@ -26,7 +26,7 @@ def mass_balance(**kwargs):
         inflow = h_inflow * min_value(0, inner(u, ν)) * φ * ds
         boundary_balance = inflow + outflow
         facet_balance = jump(f) * jump(φ) * dS
-    elif axes == ["xz"]:
+    elif axes in ["xz"]:
         f = h * max_value(0, u * ν[0])
         outflow = f * φ * ds_v
         inflow = h_inflow * min_value(0, u * ν[0]) * φ * ds_v

@@ -6,7 +6,6 @@ from firedrake import (
     Constant,
     inner,
     sqrt,
-    tr,
     dx,
     ds_b,
     ds_v,
@@ -22,20 +21,21 @@ from firedrake import (
 )
 from ..constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
 from icepack.utilities import add_kwarg_wrapper
-from icepack.calculus import grad, sym_grad, get_mesh_axes
+from icepack.calculus import grad, sym_grad, get_mesh_axes, trace as tr
 
 
 def horizontal_strain_rate(**kwargs):
     r"""Calculate the horizontal strain rate with corrections for terrain-
     following coordinates"""
-    u, h, s = itemgetter("velocity", "surface", "thickness")(kwargs)
-    mesh = h.function_space().mesh()
+    u, h, s = itemgetter("velocity", "thickness", "surface")(kwargs)
+    mesh = s.function_space().mesh()
     dim = mesh.geometric_dimension()
     ζ = SpatialCoordinate(mesh)[dim - 1]
     b = s - h
     v = -((1 - ζ) * grad(b) + ζ * grad(s)) / h
     du_dζ = u.dx(dim - 1)
     return sym_grad(u) + 0.5 * (outer(du_dζ, v) + outer(v, du_dζ))
+
 
 def vertical_strain_rate(**kwargs):
     r"""Calculate the vertical strain rate with corrections for terrain-
@@ -51,7 +51,7 @@ def C_operator_1storder(tensor, vector):
     r"""Apply the script C operator to a tensor for Blatter-Pattyn approximation.
     
     The tensor shoud be 2x3."""
-    return 1. / 2. * (tensor + tr(tensor) * Identity(tensor.geometric_dimension() - 1)), 1. / 2. * vector
+    return 2. * (tensor + tr(tensor) * Identity(tensor.function_space().mesh().geometric_dimension() - 1)), 2. * vector
 
 
 def C_norm_1storder(tensor, vector):
@@ -76,7 +76,7 @@ def viscous_power(**kwargs):
     axes = get_mesh_axes(mesh)
     d = mesh.geometric_dimension()
 
-    M_2 = (inner(Mx, Mx) + inner(Mz, Mz) - tr(Mx) ** 2 / d) / 2
+    M_2 = (inner(Mx, Mx) + inner(Mz, Mz) / 2 - tr(Mx) ** 2 / d) / 2
     M_n = conditional(eq(n, 1), M_2, M_2 ** ((n + 1) / 2))
     return 2 * h * A / (n + 1) * M_n * dx
 
@@ -86,9 +86,10 @@ def bed_friction_power(**kwargs):
     τ = kwargs["basal_stress"]
     parameter_names = ("sliding_coefficient", "sliding_exponent", "velocity")
     K, m, u = map(kwargs.get, parameter_names)
+    f = kwargs.get("floating", Constant(1.0))
     τ_2 = inner(τ, τ)
     τ_m = conditional(eq(m, 1), τ_2, τ_2 ** ((m + 1) / 2))
-    return (K / (m + 1) * τ_m + inner(τ, u)) * ds_b
+    return (K / (m + 1) * τ_m + inner(f * τ, u)) * ds_b
 
 
 def momentum_balance(**kwargs):
@@ -99,7 +100,6 @@ def momentum_balance(**kwargs):
     u, Mx, Mz, h, s = map(kwargs.get, field_names)
     ε_x = horizontal_strain_rate(velocity=u, thickness=h, surface=s)
     ε_z = vertical_strain_rate(velocity=u, thickness=h, surface=s)
-    f = kwargs.get("floating", Constant(1.0))
     cell_balance = (-h * (inner(Mx, ε_x) + inner(Mz, ε_z)) - inner(ρ_I * g * h * grad(s), u)) * dx
 
     mesh = ufl.domain.extract_unique_domain(u)
@@ -107,12 +107,14 @@ def momentum_balance(**kwargs):
     axes = get_mesh_axes(mesh)
     if axes in ["xy", "x"]:
         facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν), avg(u)) * dS
+    elif axes in ["xz"]:
+        facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν)[0], avg(u)) * dS_v
     else:
         facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν)[0], avg(u)[0]) * dS_v
         for dim in range(1, mesh.geometric_dimension() - 1):
             facet_balance += ρ_I * g * avg(h) * inner(jump(s, ν)[dim], avg(u)[dim]) * dS_v
 
-    return cell_balance - facet_balance
+    return cell_balance + facet_balance
 
 
 def calving_terminus(**kwargs):
@@ -131,8 +133,10 @@ def calving_terminus(**kwargs):
     f_I = 0.5 * ρ_I * g * h**2
     d = min_value(0, s - h)
     f_W = 0.5 * ρ_W * g * d**2
-
-    return (f_I - f_W) * sum([inner(u[i], ν[i]) for i in range(mesh.geometric_dimension() - 1)]) * ds_v(outflow_ids)
+    if mesh.geometric_dimension() == 2:
+        return (f_I - f_W) * inner(u, ν[0]) * ds_v(outflow_ids)
+    else:
+        return (f_I - f_W) * sum([inner(u[i], ν[i]) for i in range(mesh.geometric_dimension() - 1)]) * ds_v(outflow_ids)
 
 
 class HybridModel:
