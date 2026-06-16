@@ -20,7 +20,7 @@ from firedrake import (
     min_value,
 )
 from ..constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
-from icepack.utilities import add_kwarg_wrapper
+from icepack.utilities import add_kwarg_wrapper, geometric_dimension
 from icepack.calculus import grad, sym_grad, get_mesh_axes, trace as tr
 
 
@@ -29,7 +29,7 @@ def horizontal_strain_rate(**kwargs):
     following coordinates"""
     u, h, s = itemgetter("velocity", "thickness", "surface")(kwargs)
     mesh = s.function_space().mesh()
-    dim = mesh.geometric_dimension()
+    dim = geometric_dimension(mesh)
     ζ = SpatialCoordinate(mesh)[dim - 1]
     b = s - h
     v = -((1 - ζ) * grad(b) + ζ * grad(s)) / h
@@ -43,7 +43,7 @@ def vertical_strain_rate(**kwargs):
     u, h, s = itemgetter("velocity", "thickness", "surface")(kwargs)
     # Get the mesh from the surface elevation because sometimes h is a diff
     mesh = s.function_space().mesh()
-    du_dζ = u.dx(mesh.geometric_dimension() - 1)
+    du_dζ = u.dx(geometric_dimension(mesh) - 1)
     return 0.5 * du_dζ / h
 
 
@@ -51,7 +51,7 @@ def C_operator_1storder(tensor, vector):
     r"""Apply the script C operator to a tensor for Blatter-Pattyn approximation.
     
     The tensor shoud be 2x3."""
-    return 2. * (tensor + tr(tensor) * Identity(tensor.function_space().mesh().geometric_dimension() - 1)), 2. * vector
+    return 2. * (tensor + tr(tensor) * Identity(geometric_dimension(tensor.function_space().mesh()) - 1)), 2. * vector
 
 
 def C_norm_1storder(tensor, vector):
@@ -74,7 +74,7 @@ def viscous_power(**kwargs):
 
     mesh = ufl.domain.extract_unique_domain(h)
     axes = get_mesh_axes(mesh)
-    d = mesh.geometric_dimension()
+    d = geometric_dimension(mesh)
 
     M_2 = (inner(Mx, Mx) + inner(Mz, Mz) / 2 - tr(Mx) ** 2 / d) / 2
     M_n = conditional(eq(n, 1), M_2, M_2 ** ((n + 1) / 2))
@@ -111,7 +111,7 @@ def momentum_balance(**kwargs):
         facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν)[0], avg(u)) * dS_v
     else:
         facet_balance = ρ_I * g * avg(h) * inner(jump(s, ν)[0], avg(u)[0]) * dS_v
-        for dim in range(1, mesh.geometric_dimension() - 1):
+        for dim in range(1, geometric_dimension(mesh) - 1):
             facet_balance += ρ_I * g * avg(h) * inner(jump(s, ν)[dim], avg(u)[dim]) * dS_v
 
     return cell_balance + facet_balance
@@ -133,10 +133,10 @@ def calving_terminus(**kwargs):
     f_I = 0.5 * ρ_I * g * h**2
     d = min_value(0, s - h)
     f_W = 0.5 * ρ_W * g * d**2
-    if mesh.geometric_dimension() == 2:
+    if geometric_dimension(mesh) == 2:
         return (f_I - f_W) * inner(u, ν[0]) * ds_v(outflow_ids)
     else:
-        return (f_I - f_W) * sum([inner(u[i], ν[i]) for i in range(mesh.geometric_dimension() - 1)]) * ds_v(outflow_ids)
+        return (f_I - f_W) * sum([inner(u[i], ν[i]) for i in range(geometric_dimension(mesh) - 1)]) * ds_v(outflow_ids)
 
 
 class HybridModel:
