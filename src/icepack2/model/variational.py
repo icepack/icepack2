@@ -18,6 +18,7 @@ from firedrake import (
 )
 from . import utilities
 from ..constants import ice_density as ρ_I, water_density as ρ_W, gravity as g
+from icepack.utilities import geometric_dimension
 
 
 def flow_law(**kwargs):
@@ -29,7 +30,7 @@ def flow_law(**kwargs):
     A, n = map(kwargs.get, ("flow_law_coefficient", "flow_law_exponent"))
 
     mesh = ufl.domain.extract_unique_domain(u)
-    d = mesh.geometric_dimension()
+    d = geometric_dimension(mesh)
 
     ε = sym(grad(u))
     M_2 = (inner(M, M) - tr(M) ** 2 / (d + 1)) / 2
