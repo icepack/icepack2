@@ -29,7 +29,7 @@ def flow_law(**kwargs):
     A, n = map(kwargs.get, ("flow_law_coefficient", "flow_law_exponent"))
 
     mesh = ufl.domain.extract_unique_domain(u)
-    d = mesh.geometric_dimension()
+    d = mesh.geometric_dimension
 
     ε = sym(grad(u))
     M_2 = (inner(M, M) - tr(M) ** 2 / (d + 1)) / 2

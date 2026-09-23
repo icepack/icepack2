@@ -30,7 +30,7 @@ def viscous_power(**kwargs):
     A, n = map(kwargs.get, parameter_names)
 
     mesh = ufl.domain.extract_unique_domain(M)
-    d = mesh.geometric_dimension()
+    d = mesh.geometric_dimension
 
     M_2 = (inner(M, M) - tr(M) ** 2 / (d + 1)) / 2
     M_n = conditional(eq(n, 1), M_2, M_2 ** ((n + 1) / 2))

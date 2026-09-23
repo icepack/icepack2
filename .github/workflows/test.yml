@@ -4,7 +4,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     container:
-      image: docker.io/firedrakeproject/firedrake-vanilla:2024-05
+      image: docker.io/firedrakeproject/firedrake-vanilla-default:2026.4.2
       options: --user root
     steps:
       - name: Install patchelf
@@ -12,11 +12,7 @@ jobs:
           apt update
           apt install -yq patchelf
       - name: Check out git repository
-        uses: actions/checkout@v3
-      - name: Activate Firedrake virtual environment
-        run: |
-          . /home/firedrake/firedrake/bin/activate
-          echo PATH=$PATH >> $GITHUB_ENV
+        uses: actions/checkout@v4
       - name: Install package
         run: pip install --editable .
       - name: Run unit tests
